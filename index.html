@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="nb">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
@@ -16,37 +16,38 @@
 
 <header class="topbar">
   <h1>RifleLog</h1>
-  <div class="topbar-sub">training log</div>
+  <div class="topbar-sub">treningslogg</div>
 </header>
 
 <main id="view-list" class="view">
   <div class="stats-row" id="stats-row"></div>
-  <div class="section-label">Sessions</div>
+  <div class="section-label">Økter</div>
   <ul id="session-list" class="session-list"></ul>
   <div id="empty-state" class="empty-state" hidden>
-    <p>No sessions logged yet.</p>
-    <p class="empty-sub">Tap + to log your first session.</p>
+    <p>Ingen økter registrert enda.</p>
+    <p class="empty-sub">Trykk + for å registrere din første økt.</p>
   </div>
 </main>
 
-<button id="fab-add" class="fab" aria-label="Add session">+</button>
+<button id="fab-add" class="fab" aria-label="Legg til økt">+</button>
 
 <!-- Add / Edit session view -->
 <main id="view-add" class="view" hidden>
   <header class="subbar">
-    <button class="text-btn" id="cancel-add">Cancel</button>
-    <div class="subbar-title">New Session</div>
-    <button class="text-btn text-btn-primary" id="save-session">Save</button>
+    <button class="text-btn" id="cancel-add">Avbryt</button>
+    <div class="subbar-title" id="add-title">Ny økt</div>
+    <button class="text-btn text-btn-primary" id="save-session">Lagre</button>
   </header>
 
   <div class="form-block">
-    <label class="field-label" for="input-date">Date</label>
+    <label class="field-label" for="input-date">Dato</label>
     <input type="date" id="input-date" class="field-input">
   </div>
 
   <div class="form-block">
     <label class="field-label" for="input-program">Program</label>
     <select id="input-program" class="field-input">
+      <option value="Miniatyr 15m">Miniatyr 15m</option>
       <option value="Bane 100m">Bane 100m</option>
       <option value="Bane 200m">Bane 200m</option>
       <option value="Bane 300m">Bane 300m</option>
@@ -56,40 +57,68 @@
   </div>
 
   <div class="form-block">
-    <label class="field-label" for="input-notes">Notes</label>
-    <input type="text" id="input-notes" class="field-input" placeholder="Wind, light, how it felt...">
+    <label class="field-label" for="input-type">Type</label>
+    <select id="input-type" class="field-input">
+      <option value="35-skuddsprogram">35-skuddsprogram</option>
+      <option value="25 ligg">25 ligg</option>
+      <option value="25 kne">25 kne</option>
+      <option value="25 stå">25 stå</option>
+      <option value="Hel-match">Hel-match</option>
+      <option value="Halv-match">Halv-match</option>
+      <option value="Kvart-match">Kvart-match</option>
+      <option value="60 ligg ISSF">60 ligg ISSF</option>
+      <option value="Omgang">Omgang</option>
+      <option value="Grunnlag">Grunnlag</option>
+    </select>
+  </div>
+
+  <div class="form-block">
+    <label class="field-label" for="input-notes">Notater</label>
+    <input type="text" id="input-notes" class="field-input" placeholder="Vind, lys, hvordan det føltes...">
   </div>
 
   <div class="section-divider"></div>
 
-  <div class="section-label">Add shot</div>
+  <div class="section-label">Bilder</div>
+  <input type="file" id="input-images" accept="image/*" multiple class="file-input-hidden">
+  <button type="button" id="pick-images-btn" class="add-shot-btn">Legg til bilde</button>
+  <div id="image-thumbs" class="image-thumbs"></div>
+
+  <div class="section-divider"></div>
+
+  <div class="section-label">Legg til skudd</div>
   <div class="shot-entry">
     <select id="shot-position" class="field-input shot-position">
       <option value="Liggende">Liggende</option>
-      <option value="Kneelende">Kneelende</option>
+      <option value="Knestående">Knestående</option>
       <option value="Stående">Stående</option>
     </select>
     <div class="score-stepper">
-      <button id="score-down" class="stepper-btn" aria-label="Decrease score">–</button>
+      <button id="score-down" class="stepper-btn" aria-label="Reduser poeng">–</button>
       <div id="score-value" class="score-value">10</div>
-      <button id="score-up" class="stepper-btn" aria-label="Increase score">+</button>
+      <button id="score-up" class="stepper-btn" aria-label="Øk poeng">+</button>
     </div>
-    <button id="add-shot" class="add-shot-btn">Add</button>
+    <button id="add-shot" class="add-shot-btn">Legg til</button>
   </div>
 
-  <div class="section-label" id="shots-label">Shots (0)</div>
+  <div class="section-label" id="shots-label">Skudd (0)</div>
   <ul id="shot-list" class="shot-list"></ul>
 </main>
 
 <!-- Session detail view -->
 <main id="view-detail" class="view" hidden>
   <header class="subbar">
-    <button class="text-btn" id="back-detail">Back</button>
-    <div class="subbar-title" id="detail-title">Session</div>
-    <button class="text-btn text-btn-danger" id="delete-session">Delete</button>
+    <button class="text-btn" id="back-detail">Tilbake</button>
+    <div class="subbar-title" id="detail-title">Økt</div>
+    <button class="text-btn text-btn-primary" id="edit-session">Rediger</button>
   </header>
   <div id="detail-content"></div>
+  <button id="delete-session" class="delete-full-btn">Slett økt</button>
 </main>
+
+<div id="lightbox" class="lightbox" hidden>
+  <img id="lightbox-img" src="" alt="">
+</div>
 
 <script src="app.js"></script>
 </body>

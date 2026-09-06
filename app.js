@@ -36,6 +36,15 @@ function getAllSessions() {
   });
 }
 
+function updateSession(id, data) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('sessions', 'readwrite');
+    const req = tx.objectStore('sessions').put({ ...data, id });
+    req.onsuccess = () => resolve();
+    req.onerror = (e) => reject(e);
+  });
+}
+
 function deleteSessionById(id) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('sessions', 'readwrite');
@@ -48,7 +57,9 @@ function deleteSessionById(id) {
 // ---- App state ----
 let sessions = [];
 let draftShots = [];
+let draftImages = [];
 let currentDetailId = null;
+let editingId = null;
 
 // ---- View elements ----
 const viewList = document.getElementById('view-list');
@@ -74,9 +85,9 @@ function renderStats() {
     : '–';
 
   statsRow.innerHTML = `
-    <div class="stat"><div class="stat-value">${totalSessions}</div><div class="stat-label">sessions</div></div>
-    <div class="stat"><div class="stat-value">${totalShots}</div><div class="stat-label">shots logged</div></div>
-    <div class="stat"><div class="stat-value">${avgScore}</div><div class="stat-label">avg / shot</div></div>
+    <div class="stat"><div class="stat-value">${totalSessions}</div><div class="stat-label">økter</div></div>
+    <div class="stat"><div class="stat-value">${totalShots}</div><div class="stat-label">skudd registrert</div></div>
+    <div class="stat"><div class="stat-value">${avgScore}</div><div class="stat-label">snitt / skudd</div></div>
   `;
 }
 
@@ -96,7 +107,7 @@ function renderSessionList() {
     <li class="session-item" data-id="${s.id}">
       <div class="session-item-main">
         <div class="session-program">${s.programType}</div>
-        <div class="session-meta">${formatDate(s.date)} · ${s.shots.length} shots</div>
+        <div class="session-meta">${formatDate(s.date)}${s.trainingType ? ' · ' + s.trainingType : ''} · ${s.shots.length} skudd</div>
       </div>
       <div class="session-score">${scoreTotal(s)}</div>
     </li>
@@ -109,7 +120,7 @@ function renderSessionList() {
 
 function formatDate(iso) {
   const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return d.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 async function refreshList() {
@@ -120,13 +131,33 @@ async function refreshList() {
 
 // ---- Add session flow ----
 function resetAddForm() {
+  editingId = null;
+  document.getElementById('add-title').textContent = 'Ny økt';
   document.getElementById('input-date').valueAsDate = new Date();
   document.getElementById('input-program').selectedIndex = 0;
+  document.getElementById('input-type').selectedIndex = 0;
   document.getElementById('input-notes').value = '';
   document.getElementById('shot-position').selectedIndex = 0;
   draftShots = [];
+  draftImages = [];
   renderDraftShots();
+  renderDraftImages();
   setScoreValue(10);
+}
+
+function openEditForm(session) {
+  editingId = session.id;
+  document.getElementById('add-title').textContent = 'Rediger økt';
+  document.getElementById('input-date').value = session.date;
+  document.getElementById('input-program').value = session.programType;
+  if (session.trainingType) document.getElementById('input-type').value = session.trainingType;
+  document.getElementById('input-notes').value = session.notes || '';
+  draftShots = session.shots.map(s => ({ ...s }));
+  draftImages = (session.images || []).slice();
+  renderDraftShots();
+  renderDraftImages();
+  setScoreValue(10);
+  showView(viewAdd);
 }
 
 let currentScore = 10;
@@ -137,13 +168,33 @@ function setScoreValue(v) {
 
 function renderDraftShots() {
   const list = document.getElementById('shot-list');
-  document.getElementById('shots-label').textContent = `Shots (${draftShots.length})`;
+  document.getElementById('shots-label').textContent = `Skudd (${draftShots.length})`;
   list.innerHTML = draftShots.map((s, i) => `
     <li class="shot-item">
       <span>${i + 1}. ${s.position}</span>
-      <span class="shot-item-score">${s.score}</span>
+      <span class="shot-item-right">
+        <span class="shot-item-score">${s.score}</span>
+        <button class="shot-move" data-dir="up" data-index="${i}" ${i === 0 ? 'disabled' : ''} aria-label="Flytt opp">↑</button>
+        <button class="shot-move" data-dir="down" data-index="${i}" ${i === draftShots.length - 1 ? 'disabled' : ''} aria-label="Flytt ned">↓</button>
+        <button class="shot-remove" data-index="${i}" aria-label="Fjern skudd">×</button>
+      </span>
     </li>
   `).join('');
+  list.querySelectorAll('.shot-move').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = Number(btn.dataset.index);
+      const j = btn.dataset.dir === 'up' ? i - 1 : i + 1;
+      if (j < 0 || j >= draftShots.length) return;
+      [draftShots[i], draftShots[j]] = [draftShots[j], draftShots[i]];
+      renderDraftShots();
+    });
+  });
+  list.querySelectorAll('.shot-remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      draftShots.splice(Number(btn.dataset.index), 1);
+      renderDraftShots();
+    });
+  });
 }
 
 document.getElementById('fab-add').addEventListener('click', () => {
@@ -151,7 +202,10 @@ document.getElementById('fab-add').addEventListener('click', () => {
   showView(viewAdd);
 });
 
-document.getElementById('cancel-add').addEventListener('click', () => showView(viewList));
+document.getElementById('cancel-add').addEventListener('click', () => {
+  editingId = null;
+  showView(viewList);
+});
 
 document.getElementById('score-up').addEventListener('click', () => setScoreValue(currentScore + 1));
 document.getElementById('score-down').addEventListener('click', () => setScoreValue(currentScore - 1));
@@ -162,21 +216,102 @@ document.getElementById('add-shot').addEventListener('click', () => {
   renderDraftShots();
 });
 
+// ---- Images ----
+function compressImage(file, maxDim = 1600, quality = 0.75) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          const scale = maxDim / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderDraftImages() {
+  const wrap = document.getElementById('image-thumbs');
+  wrap.innerHTML = draftImages.map((src, i) => `
+    <div class="image-thumb">
+      <img src="${src}" alt="">
+      <button class="image-thumb-remove" data-index="${i}" aria-label="Fjern bilde">×</button>
+    </div>
+  `).join('');
+  wrap.querySelectorAll('.image-thumb-remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      draftImages.splice(Number(btn.dataset.index), 1);
+      renderDraftImages();
+    });
+  });
+}
+
+document.getElementById('pick-images-btn').addEventListener('click', () => {
+  document.getElementById('input-images').click();
+});
+
+document.getElementById('input-images').addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files);
+  for (const file of files) {
+    try {
+      const dataUrl = await compressImage(file);
+      draftImages.push(dataUrl);
+    } catch (err) {
+      console.error('Kunne ikke laste bilde', err);
+    }
+  }
+  renderDraftImages();
+  e.target.value = '';
+});
+
+function openLightbox(src) {
+  document.getElementById('lightbox-img').src = src;
+  document.getElementById('lightbox').hidden = false;
+}
+
+document.getElementById('lightbox').addEventListener('click', () => {
+  document.getElementById('lightbox').hidden = true;
+});
+
 document.getElementById('save-session').addEventListener('click', async () => {
   const date = document.getElementById('input-date').value || new Date().toISOString().slice(0, 10);
   const programType = document.getElementById('input-program').value;
+  const trainingType = document.getElementById('input-type').value;
   const notes = document.getElementById('input-notes').value;
 
   const session = {
     date,
     programType,
+    trainingType,
     notes,
-    shots: draftShots
+    shots: draftShots,
+    images: draftImages
   };
 
-  await addSession(session);
-  await refreshList();
-  showView(viewList);
+  if (editingId != null) {
+    const id = editingId;
+    await updateSession(id, session);
+    editingId = null;
+    await refreshList();
+    openDetail(id);
+  } else {
+    await addSession(session);
+    await refreshList();
+    showView(viewList);
+  }
 });
 
 // ---- Detail view ----
@@ -189,11 +324,12 @@ async function openDetail(id) {
 
   const content = document.getElementById('detail-content');
   content.innerHTML = `
-    <div class="detail-row"><span class="detail-row-label">Date</span><span class="detail-row-value">${formatDate(session.date)}</span></div>
+    <div class="detail-row"><span class="detail-row-label">Dato</span><span class="detail-row-value">${formatDate(session.date)}</span></div>
     <div class="detail-row"><span class="detail-row-label">Program</span><span class="detail-row-value">${session.programType}</span></div>
-    <div class="detail-row"><span class="detail-row-label">Total score</span><span class="detail-row-value">${scoreTotal(session)}</span></div>
-    ${session.notes ? `<div class="detail-row"><span class="detail-row-label">Notes</span><span class="detail-row-value">${escapeHtml(session.notes)}</span></div>` : ''}
-    <div class="detail-shots-title">Shots (${session.shots.length})</div>
+    ${session.trainingType ? `<div class="detail-row"><span class="detail-row-label">Type</span><span class="detail-row-value">${session.trainingType}</span></div>` : ''}
+    <div class="detail-row"><span class="detail-row-label">Totalt poeng</span><span class="detail-row-value">${scoreTotal(session)}</span></div>
+    ${session.notes ? `<div class="detail-row"><span class="detail-row-label">Notater</span><span class="detail-row-value">${escapeHtml(session.notes)}</span></div>` : ''}
+    <div class="detail-shots-title">Skudd (${session.shots.length})</div>
     <ul class="shot-list">
       ${session.shots.map((s, i) => `
         <li class="shot-item">
@@ -202,7 +338,20 @@ async function openDetail(id) {
         </li>
       `).join('')}
     </ul>
+    ${session.images && session.images.length ? `
+      <div class="detail-shots-title">Bilder (${session.images.length})</div>
+      <div class="image-thumbs" id="detail-image-thumbs">
+        ${session.images.map((src, i) => `<div class="image-thumb" data-index="${i}"><img src="${src}" alt=""></div>`).join('')}
+      </div>
+    ` : ''}
   `;
+
+  const detailThumbs = document.getElementById('detail-image-thumbs');
+  if (detailThumbs) {
+    detailThumbs.querySelectorAll('.image-thumb').forEach(el => {
+      el.addEventListener('click', () => openLightbox(session.images[Number(el.dataset.index)]));
+    });
+  }
 
   showView(viewDetail);
 }
@@ -214,6 +363,11 @@ function escapeHtml(str) {
 }
 
 document.getElementById('back-detail').addEventListener('click', () => showView(viewList));
+
+document.getElementById('edit-session').addEventListener('click', () => {
+  const session = sessions.find(s => s.id === currentDetailId);
+  if (session) openEditForm(session);
+});
 
 document.getElementById('delete-session').addEventListener('click', async () => {
   if (currentDetailId == null) return;
