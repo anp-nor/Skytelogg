@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#16171A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="RifleLog">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="styles.css">
+<title>RifleLog</title>
+</head>
+<body>
+
+<header class="topbar">
+  <h1>RifleLog</h1>
+  <div class="topbar-sub">training log</div>
+</header>
+
+<main id="view-list" class="view">
+  <div class="stats-row" id="stats-row"></div>
+  <div class="section-label">Sessions</div>
+  <ul id="session-list" class="session-list"></ul>
+  <div id="empty-state" class="empty-state" hidden>
+    <p>No sessions logged yet.</p>
+    <p class="empty-sub">Tap + to log your first session.</p>
+  </div>
+</main>
+
+<button id="fab-add" class="fab" aria-label="Add session">+</button>
+
+<!-- Add / Edit session view -->
+<main id="view-add" class="view" hidden>
+  <header class="subbar">
+    <button class="text-btn" id="cancel-add">Cancel</button>
+    <div class="subbar-title">New Session</div>
+    <button class="text-btn text-btn-primary" id="save-session">Save</button>
+  </header>
+
+  <div class="form-block">
+    <label class="field-label" for="input-date">Date</label>
+    <input type="date" id="input-date" class="field-input">
+  </div>
+
+  <div class="form-block">
+    <label class="field-label" for="input-program">Program</label>
+    <select id="input-program" class="field-input">
+      <option value="Bane 100m">Bane 100m</option>
+      <option value="Bane 200m">Bane 200m</option>
+      <option value="Bane 300m">Bane 300m</option>
+      <option value="Finfelt">Finfelt</option>
+      <option value="Grovfelt">Grovfelt</option>
+    </select>
+  </div>
+
+  <div class="form-block">
+    <label class="field-label" for="input-notes">Notes</label>
+    <input type="text" id="input-notes" class="field-input" placeholder="Wind, light, how it felt...">
+  </div>
+
+  <div class="section-divider"></div>
+
+  <div class="section-label">Add shot</div>
+  <div class="shot-entry">
+    <select id="shot-position" class="field-input shot-position">
+      <option value="Liggende">Liggende</option>
+      <option value="Kneelende">Kneelende</option>
+      <option value="Stående">Stående</option>
+    </select>
+    <div class="score-stepper">
+      <button id="score-down" class="stepper-btn" aria-label="Decrease score">–</button>
+      <div id="score-value" class="score-value">10</div>
+      <button id="score-up" class="stepper-btn" aria-label="Increase score">+</button>
+    </div>
+    <button id="add-shot" class="add-shot-btn">Add</button>
+  </div>
+
+  <div class="section-label" id="shots-label">Shots (0)</div>
+  <ul id="shot-list" class="shot-list"></ul>
+</main>
+
+<!-- Session detail view -->
+<main id="view-detail" class="view" hidden>
+  <header class="subbar">
+    <button class="text-btn" id="back-detail">Back</button>
+    <div class="subbar-title" id="detail-title">Session</div>
+    <button class="text-btn text-btn-danger" id="delete-session">Delete</button>
+  </header>
+  <div id="detail-content"></div>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

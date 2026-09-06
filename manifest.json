@@ -1,0 +1,12 @@
+{
+  "name": "RifleLog",
+  "short_name": "RifleLog",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#16171A",
+  "theme_color": "#16171A",
+  "icons": [
+    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
