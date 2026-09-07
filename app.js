@@ -60,6 +60,25 @@ let draftShots = [];
 let draftImages = [];
 let currentDetailId = null;
 let editingId = null;
+let isDecimalMode = false;
+let isPlottMode = false;
+
+function formatScore(score, decimal) {
+  return decimal ? Number(score).toFixed(1) : String(score);
+}
+
+function buildShotGroups(shotsArray) {
+  const groups = [];
+  shotsArray.forEach((shot, index) => {
+    const last = groups[groups.length - 1];
+    if (last && last.position === shot.position) {
+      last.items.push({ shot, index });
+    } else {
+      groups.push({ position: shot.position, items: [{ shot, index }] });
+    }
+  });
+  return groups;
+}
 
 // ---- View elements ----
 const viewList = document.getElementById('view-list');
@@ -73,7 +92,10 @@ function showView(view) {
 
 // ---- Rendering: list view ----
 function scoreTotal(session) {
-  return session.shots.reduce((sum, s) => sum + s.score, 0);
+  if (session.trainingType === 'Plott') {
+    return session.shots.reduce((sum, s) => sum + Number(s.actualScore || 0), 0);
+  }
+  return session.shots.reduce((sum, s) => sum + Number(s.score || 0), 0);
 }
 
 function renderStats() {
@@ -123,6 +145,47 @@ function formatDate(iso) {
   return d.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+function renderDetailShotGroups(session) {
+  const decimal = session.trainingType === '60 ligg ISSF';
+  const groups = buildShotGroups(session.shots);
+  let html = '';
+  groups.forEach(group => {
+    html += group.items.map(({ shot, index }) => `
+      <li class="shot-item">
+        <span>${index + 1}. ${shot.position}</span>
+        <span class="shot-item-right">
+          <span class="shot-item-score">${formatScore(shot.score, decimal)}</span>
+          ${shot.centerTen ? '<span class="center-ten-badge">S</span>' : ''}
+        </span>
+      </li>
+    `).join('');
+    const subtotal = group.items.reduce((sum, { shot }) => sum + Number(shot.score), 0);
+    const centerTenCount = group.items.filter(({ shot }) => shot.centerTen).length;
+    html += `<li class="shot-subtotal">Sum ${group.position.toLowerCase()}: ${formatScore(subtotal, decimal)} · Sentrumstiere: ${centerTenCount}</li>`;
+  });
+  if (session.shots.length > 0) {
+    const total = session.shots.reduce((sum, s) => sum + Number(s.score), 0);
+    const totalCenterTen = session.shots.filter(s => s.centerTen).length;
+    html += `<li class="shot-total">Totalt: ${formatScore(total, decimal)} · Sentrumstiere totalt: ${totalCenterTen}</li>`;
+  }
+  return html;
+}
+
+function renderDetailPlott(session) {
+  let html = session.shots.map((s, i) => `
+    <li class="shot-item">
+      <span>${i + 1}. Forv: ${s.expectedScore} ${String(s.expectedDirection).toLowerCase()} · Fakt: ${s.actualScore} ${String(s.actualDirection).toLowerCase()}</span>
+    </li>
+  `).join('');
+  if (session.shots.length > 0) {
+    const sumExpected = session.shots.reduce((sum, s) => sum + Number(s.expectedScore), 0);
+    const sumActual = session.shots.reduce((sum, s) => sum + Number(s.actualScore), 0);
+    html += `<li class="shot-subtotal">Sum forventet: ${sumExpected}</li>`;
+    html += `<li class="shot-total">Sum faktisk: ${sumActual}</li>`;
+  }
+  return html;
+}
+
 async function refreshList() {
   sessions = await getAllSessions();
   renderStats();
@@ -142,7 +205,7 @@ function resetAddForm() {
   draftImages = [];
   renderDraftShots();
   renderDraftImages();
-  setScoreValue(10);
+  updateFormModeUI();
 }
 
 function openEditForm(session) {
@@ -156,30 +219,102 @@ function openEditForm(session) {
   draftImages = (session.images || []).slice();
   renderDraftShots();
   renderDraftImages();
-  setScoreValue(10);
+  updateFormModeUI();
   showView(viewAdd);
 }
 
 let currentScore = 10;
 function setScoreValue(v) {
-  currentScore = Math.max(0, Math.min(10, v));
-  document.getElementById('score-value').textContent = currentScore;
+  const max = isDecimalMode ? 10.9 : 10;
+  let val = Math.max(0, Math.min(max, v));
+  if (isDecimalMode) val = parseFloat(val.toFixed(1));
+  currentScore = val;
+  document.getElementById('score-value').textContent = isDecimalMode ? currentScore.toFixed(1) : String(currentScore);
+}
+
+function updateFormModeUI() {
+  const typeVal = document.getElementById('input-type').value;
+  isPlottMode = typeVal === 'Plott';
+  isDecimalMode = typeVal === '60 ligg ISSF';
+  document.getElementById('shot-entry-normal').hidden = isPlottMode;
+  document.getElementById('shot-entry-plott').hidden = !isPlottMode;
+  if (!isPlottMode) {
+    setScoreValue(isDecimalMode ? 10.0 : 10);
+  }
+  renderDraftShots();
 }
 
 function renderDraftShots() {
   const list = document.getElementById('shot-list');
   document.getElementById('shots-label').textContent = `Skudd (${draftShots.length})`;
-  list.innerHTML = draftShots.map((s, i) => `
+
+  if (isPlottMode) {
+    renderDraftPlottList(list);
+    return;
+  }
+
+  const groups = buildShotGroups(draftShots);
+  let html = '';
+  groups.forEach(group => {
+    html += group.items.map(({ shot, index }) => `
+      <li class="shot-item">
+        <span>${index + 1}. ${shot.position}</span>
+        <span class="shot-item-right">
+          <span class="shot-item-score">${formatScore(shot.score, isDecimalMode)}</span>
+          ${shot.centerTen ? '<span class="center-ten-badge">S</span>' : ''}
+          <button class="shot-move" data-dir="up" data-index="${index}" ${index === 0 ? 'disabled' : ''} aria-label="Flytt opp">↑</button>
+          <button class="shot-move" data-dir="down" data-index="${index}" ${index === draftShots.length - 1 ? 'disabled' : ''} aria-label="Flytt ned">↓</button>
+          <button class="shot-remove" data-index="${index}" aria-label="Fjern skudd">×</button>
+        </span>
+      </li>
+    `).join('');
+    const subtotal = group.items.reduce((sum, { shot }) => sum + Number(shot.score), 0);
+    const centerTenCount = group.items.filter(({ shot }) => shot.centerTen).length;
+    html += `<li class="shot-subtotal">Sum ${group.position.toLowerCase()}: ${formatScore(subtotal, isDecimalMode)} · Sentrumstiere: ${centerTenCount}</li>`;
+  });
+  if (draftShots.length > 0) {
+    const total = draftShots.reduce((sum, s) => sum + Number(s.score), 0);
+    const totalCenterTen = draftShots.filter(s => s.centerTen).length;
+    html += `<li class="shot-total">Totalt: ${formatScore(total, isDecimalMode)} · Sentrumstiere totalt: ${totalCenterTen}</li>`;
+  }
+  list.innerHTML = html;
+
+  list.querySelectorAll('.shot-move').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = Number(btn.dataset.index);
+      const j = btn.dataset.dir === 'up' ? i - 1 : i + 1;
+      if (j < 0 || j >= draftShots.length) return;
+      [draftShots[i], draftShots[j]] = [draftShots[j], draftShots[i]];
+      renderDraftShots();
+    });
+  });
+  list.querySelectorAll('.shot-remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      draftShots.splice(Number(btn.dataset.index), 1);
+      renderDraftShots();
+    });
+  });
+}
+
+function renderDraftPlottList(list) {
+  let html = draftShots.map((s, i) => `
     <li class="shot-item">
-      <span>${i + 1}. ${s.position}</span>
+      <span>${i + 1}. Forv: ${s.expectedScore} ${String(s.expectedDirection).toLowerCase()} · Fakt: ${s.actualScore} ${String(s.actualDirection).toLowerCase()}</span>
       <span class="shot-item-right">
-        <span class="shot-item-score">${s.score}</span>
         <button class="shot-move" data-dir="up" data-index="${i}" ${i === 0 ? 'disabled' : ''} aria-label="Flytt opp">↑</button>
         <button class="shot-move" data-dir="down" data-index="${i}" ${i === draftShots.length - 1 ? 'disabled' : ''} aria-label="Flytt ned">↓</button>
         <button class="shot-remove" data-index="${i}" aria-label="Fjern skudd">×</button>
       </span>
     </li>
   `).join('');
+  if (draftShots.length > 0) {
+    const sumExpected = draftShots.reduce((sum, s) => sum + Number(s.expectedScore), 0);
+    const sumActual = draftShots.reduce((sum, s) => sum + Number(s.actualScore), 0);
+    html += `<li class="shot-subtotal">Sum forventet: ${sumExpected}</li>`;
+    html += `<li class="shot-total">Sum faktisk: ${sumActual}</li>`;
+  }
+  list.innerHTML = html;
+
   list.querySelectorAll('.shot-move').forEach(btn => {
     btn.addEventListener('click', () => {
       const i = Number(btn.dataset.index);
@@ -207,12 +342,25 @@ document.getElementById('cancel-add').addEventListener('click', () => {
   showView(viewList);
 });
 
-document.getElementById('score-up').addEventListener('click', () => setScoreValue(currentScore + 1));
-document.getElementById('score-down').addEventListener('click', () => setScoreValue(currentScore - 1));
+document.getElementById('score-up').addEventListener('click', () => setScoreValue(currentScore + (isDecimalMode ? 0.1 : 1)));
+document.getElementById('score-down').addEventListener('click', () => setScoreValue(currentScore - (isDecimalMode ? 0.1 : 1)));
+
+document.getElementById('input-type').addEventListener('change', updateFormModeUI);
 
 document.getElementById('add-shot').addEventListener('click', () => {
   const position = document.getElementById('shot-position').value;
-  draftShots.push({ position, score: currentScore });
+  const centerTen = document.getElementById('shot-center-ten').checked;
+  draftShots.push({ position, score: currentScore, centerTen });
+  document.getElementById('shot-center-ten').checked = false;
+  renderDraftShots();
+});
+
+document.getElementById('add-plott-shot').addEventListener('click', () => {
+  const expectedScore = parseFloat(document.getElementById('plott-expected-score').value) || 0;
+  const expectedDirection = document.getElementById('plott-expected-direction').value;
+  const actualScore = parseFloat(document.getElementById('plott-actual-score').value) || 0;
+  const actualDirection = document.getElementById('plott-actual-direction').value;
+  draftShots.push({ expectedScore, expectedDirection, actualScore, actualDirection });
   renderDraftShots();
 });
 
@@ -325,18 +473,13 @@ async function openDetail(id) {
   const content = document.getElementById('detail-content');
   content.innerHTML = `
     <div class="detail-row"><span class="detail-row-label">Dato</span><span class="detail-row-value">${formatDate(session.date)}</span></div>
-    <div class="detail-row"><span class="detail-row-label">Program</span><span class="detail-row-value">${session.programType}</span></div>
-    ${session.trainingType ? `<div class="detail-row"><span class="detail-row-label">Type</span><span class="detail-row-value">${session.trainingType}</span></div>` : ''}
-    <div class="detail-row"><span class="detail-row-label">Totalt poeng</span><span class="detail-row-value">${scoreTotal(session)}</span></div>
+    <div class="detail-row"><span class="detail-row-label">Bane</span><span class="detail-row-value">${session.programType}</span></div>
+    ${session.trainingType ? `<div class="detail-row"><span class="detail-row-label">Øvelse</span><span class="detail-row-value">${session.trainingType}</span></div>` : ''}
+    ${session.trainingType !== 'Plott' ? `<div class="detail-row"><span class="detail-row-label">Totalt poeng</span><span class="detail-row-value">${formatScore(scoreTotal(session), session.trainingType === '60 ligg ISSF')}</span></div>` : ''}
     ${session.notes ? `<div class="detail-row"><span class="detail-row-label">Notater</span><span class="detail-row-value">${escapeHtml(session.notes)}</span></div>` : ''}
     <div class="detail-shots-title">Skudd (${session.shots.length})</div>
     <ul class="shot-list">
-      ${session.shots.map((s, i) => `
-        <li class="shot-item">
-          <span>${i + 1}. ${s.position}</span>
-          <span class="shot-item-score">${s.score}</span>
-        </li>
-      `).join('')}
+      ${session.trainingType === 'Plott' ? renderDetailPlott(session) : renderDetailShotGroups(session)}
     </ul>
     ${session.images && session.images.length ? `
       <div class="detail-shots-title">Bilder (${session.images.length})</div>

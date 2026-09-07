@@ -208,6 +208,31 @@ body {
   align-items: center;
 }
 
+.center-ten-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.center-ten-label input[type="checkbox"] {
+  accent-color: var(--brass);
+  width: 16px;
+  height: 16px;
+}
+
+.center-ten-badge {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--brass);
+  border: 1px solid var(--brass-dim);
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin-left: 4px;
+}
+
 .shot-position { flex: 1; }
 
 .score-stepper {
@@ -246,12 +271,35 @@ body {
   font-weight: 600;
 }
 
+.plott-add-btn {
+  width: 100%;
+  margin-top: 4px;
+}
+
 .shot-item {
   display: flex;
   justify-content: space-between;
   padding: 10px 0;
   border-bottom: 1px solid var(--hairline);
   font-size: 14px;
+}
+
+.shot-subtotal {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: right;
+  padding: 4px 0 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.shot-total {
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--brass);
+  text-align: right;
+  padding: 12px 0 4px;
 }
 
 .shot-item-score {

@@ -45,7 +45,7 @@
   </div>
 
   <div class="form-block">
-    <label class="field-label" for="input-program">Program</label>
+    <label class="field-label" for="input-program">Bane</label>
     <select id="input-program" class="field-input">
       <option value="Miniatyr 15m">Miniatyr 15m</option>
       <option value="Bane 100m">Bane 100m</option>
@@ -57,7 +57,7 @@
   </div>
 
   <div class="form-block">
-    <label class="field-label" for="input-type">Type</label>
+    <label class="field-label" for="input-type">Øvelse</label>
     <select id="input-type" class="field-input">
       <option value="35-skuddsprogram">35-skuddsprogram</option>
       <option value="25 ligg">25 ligg</option>
@@ -69,6 +69,7 @@
       <option value="60 ligg ISSF">60 ligg ISSF</option>
       <option value="Omgang">Omgang</option>
       <option value="Grunnlag">Grunnlag</option>
+      <option value="Plott">Plott</option>
     </select>
   </div>
 
@@ -87,18 +88,62 @@
   <div class="section-divider"></div>
 
   <div class="section-label">Legg til skudd</div>
-  <div class="shot-entry">
-    <select id="shot-position" class="field-input shot-position">
-      <option value="Liggende">Liggende</option>
-      <option value="Knestående">Knestående</option>
-      <option value="Stående">Stående</option>
-    </select>
-    <div class="score-stepper">
-      <button id="score-down" class="stepper-btn" aria-label="Reduser poeng">–</button>
-      <div id="score-value" class="score-value">10</div>
-      <button id="score-up" class="stepper-btn" aria-label="Øk poeng">+</button>
+  <div id="shot-entry-normal">
+    <div class="shot-entry">
+      <select id="shot-position" class="field-input shot-position">
+        <option value="Liggende">Liggende</option>
+        <option value="Knestående">Knestående</option>
+        <option value="Stående">Stående</option>
+      </select>
+      <div class="score-stepper">
+        <button id="score-down" class="stepper-btn" aria-label="Reduser poeng">–</button>
+        <div id="score-value" class="score-value">10</div>
+        <button id="score-up" class="stepper-btn" aria-label="Øk poeng">+</button>
+      </div>
+      <button id="add-shot" class="add-shot-btn">Legg til</button>
     </div>
-    <button id="add-shot" class="add-shot-btn">Legg til</button>
+    <label class="center-ten-label">
+      <input type="checkbox" id="shot-center-ten">
+      Sentrumstier
+    </label>
+  </div>
+
+  <div id="shot-entry-plott" class="plott-entry" hidden>
+    <div class="form-block">
+      <label class="field-label" for="plott-expected-score">Forventet poeng</label>
+      <input type="number" id="plott-expected-score" class="field-input" step="0.1" value="10">
+    </div>
+    <div class="form-block">
+      <label class="field-label" for="plott-expected-direction">Forventet retning</label>
+      <select id="plott-expected-direction" class="field-input">
+        <option value="Opp">Opp</option>
+        <option value="Opp-venstre">Opp-venstre</option>
+        <option value="Venstre">Venstre</option>
+        <option value="Ned-venstre">Ned-venstre</option>
+        <option value="Ned">Ned</option>
+        <option value="Ned-høyre">Ned-høyre</option>
+        <option value="Høyre">Høyre</option>
+        <option value="Opp-høyre">Opp-høyre</option>
+      </select>
+    </div>
+    <div class="form-block">
+      <label class="field-label" for="plott-actual-score">Faktisk poeng</label>
+      <input type="number" id="plott-actual-score" class="field-input" step="0.1" value="10">
+    </div>
+    <div class="form-block">
+      <label class="field-label" for="plott-actual-direction">Faktisk retning</label>
+      <select id="plott-actual-direction" class="field-input">
+        <option value="Opp">Opp</option>
+        <option value="Opp-venstre">Opp-venstre</option>
+        <option value="Venstre">Venstre</option>
+        <option value="Ned-venstre">Ned-venstre</option>
+        <option value="Ned">Ned</option>
+        <option value="Ned-høyre">Ned-høyre</option>
+        <option value="Høyre">Høyre</option>
+        <option value="Opp-høyre">Opp-høyre</option>
+      </select>
+    </div>
+    <button id="add-plott-shot" class="add-shot-btn plott-add-btn">Legg til</button>
   </div>
 
   <div class="section-label" id="shots-label">Skudd (0)</div>
