@@ -369,6 +369,10 @@ body {
   z-index: 1000;
 }
 
+.lightbox[hidden] {
+  display: none;
+}
+
 .lightbox img {
   max-width: 92vw;
   max-height: 92vh;
