@@ -32,9 +32,12 @@ body {
 .topbar {
   padding: 28px 20px 16px;
   border-bottom: 1px solid var(--hairline);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
 }
 
-.topbar h1 {
+.topbar-text h1 {
   font-size: 22px;
   font-weight: 600;
   margin: 0;
@@ -348,6 +351,53 @@ body {
   font-size: 13px;
   color: var(--text-dim);
   margin: 24px 0 8px;
+}
+
+.filter-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.chart-wrap {
+  width: 100%;
+  height: 220px;
+  margin-bottom: 8px;
+}
+
+.stats-chart {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.stats-table th, .stats-table td {
+  text-align: left;
+  padding: 8px 10px 8px 0;
+  border-bottom: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+
+.stats-table th {
+  color: var(--text-dim);
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.stats-table td.stats-score {
+  font-family: var(--mono);
+  color: var(--brass);
 }
 
 .delete-full-btn {

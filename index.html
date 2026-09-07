@@ -15,8 +15,11 @@
 <body>
 
 <header class="topbar">
-  <h1>Skytelogg</h1>
-  <div class="topbar-sub">Treningsdagbok for DFS-skyting</div>
+  <div class="topbar-text">
+    <h1>Skytelogg</h1>
+    <div class="topbar-sub">Treningsdagbok for DFS-skyting</div>
+  </div>
+  <button class="text-btn text-btn-primary" id="open-stats">Statistikk</button>
 </header>
 
 <main id="view-list" class="view">
@@ -169,6 +172,63 @@
   </header>
   <div id="detail-content"></div>
   <button id="delete-session" class="delete-full-btn">Slett økt</button>
+</main>
+
+<!-- Statistics view -->
+<main id="view-stats" class="view" hidden>
+  <header class="subbar">
+    <button class="text-btn" id="back-stats">Tilbake</button>
+    <div class="subbar-title">Statistikk</div>
+    <span></span>
+  </header>
+
+  <div class="filter-row">
+    <select id="filter-program" class="field-input">
+      <option value="">Alle baner</option>
+      <option value="Miniatyr 15m">Miniatyr 15m</option>
+      <option value="Bane 100m">Bane 100m</option>
+      <option value="Bane 200m">Bane 200m</option>
+      <option value="Bane 300m">Bane 300m</option>
+      <option value="Finfelt">Finfelt</option>
+      <option value="Grovfelt">Grovfelt</option>
+    </select>
+    <select id="filter-category" class="field-input">
+      <option value="">Alle typer</option>
+      <option value="Trening">Trening</option>
+      <option value="Konkurranse">Konkurranse</option>
+    </select>
+    <select id="filter-type" class="field-input">
+      <option value="">Alle øvelser</option>
+      <option value="35-skuddsprogram">35-skuddsprogram</option>
+      <option value="25 ligg">25 ligg</option>
+      <option value="25 kne">25 kne</option>
+      <option value="15 stå">15 stå</option>
+      <option value="Hel-match">Hel-match</option>
+      <option value="Halv-match">Halv-match</option>
+      <option value="Kvart-match">Kvart-match</option>
+      <option value="60 ligg ISSF">60 ligg ISSF</option>
+      <option value="Omgang">Omgang</option>
+      <option value="Grunnlag">Grunnlag</option>
+      <option value="Plott">Plott</option>
+    </select>
+  </div>
+
+  <div class="chart-wrap">
+    <canvas id="stats-chart" class="stats-chart"></canvas>
+  </div>
+  <div id="stats-empty" class="empty-state" hidden>
+    <p>Ingen økter matcher filtrene.</p>
+  </div>
+
+  <div class="section-label">Resultater</div>
+  <div class="table-wrap">
+    <table class="stats-table">
+      <thead>
+        <tr><th>Dato</th><th>Bane</th><th>Type</th><th>Øvelse</th><th>Sum</th></tr>
+      </thead>
+      <tbody id="stats-table-body"></tbody>
+    </table>
+  </div>
 </main>
 
 <div id="lightbox" class="lightbox" hidden>

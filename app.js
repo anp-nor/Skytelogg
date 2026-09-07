@@ -84,9 +84,10 @@ function buildShotGroups(shotsArray) {
 const viewList = document.getElementById('view-list');
 const viewAdd = document.getElementById('view-add');
 const viewDetail = document.getElementById('view-detail');
+const viewStats = document.getElementById('view-stats');
 
 function showView(view) {
-  [viewList, viewAdd, viewDetail].forEach(v => v.hidden = true);
+  [viewList, viewAdd, viewDetail, viewStats].forEach(v => v.hidden = true);
   view.hidden = false;
 }
 
@@ -556,6 +557,137 @@ document.getElementById('delete-session').addEventListener('click', async () => 
   await refreshList();
   showView(viewList);
 });
+
+// ---- Statistics view ----
+document.getElementById('open-stats').addEventListener('click', () => {
+  renderStatsPage();
+  showView(viewStats);
+});
+
+document.getElementById('back-stats').addEventListener('click', () => showView(viewList));
+
+['filter-program', 'filter-category', 'filter-type'].forEach(id => {
+  document.getElementById(id).addEventListener('change', renderStatsPage);
+});
+
+function shortDateLabel(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' });
+}
+
+function getFilteredSessions() {
+  const program = document.getElementById('filter-program').value;
+  const category = document.getElementById('filter-category').value;
+  const type = document.getElementById('filter-type').value;
+  return sessions.filter(s =>
+    (!program || s.programType === program) &&
+    (!category || s.category === category) &&
+    (!type || s.trainingType === type)
+  );
+}
+
+function renderStatsPage() {
+  const filtered = getFilteredSessions().slice().sort((a, b) => new Date(a.date) - new Date(b.date));
+  const emptyEl = document.getElementById('stats-empty');
+  const canvas = document.getElementById('stats-chart');
+  const tbody = document.getElementById('stats-table-body');
+
+  if (filtered.length === 0) {
+    emptyEl.hidden = false;
+    canvas.hidden = true;
+    tbody.innerHTML = '';
+    return;
+  }
+  emptyEl.hidden = true;
+  canvas.hidden = false;
+
+  const points = filtered.map(s => ({
+    value: scoreTotal(s),
+    label: shortDateLabel(s.date)
+  }));
+  drawLineChart(canvas, points);
+
+  tbody.innerHTML = filtered.slice().reverse().map(s => `
+    <tr>
+      <td>${formatDate(s.date)}</td>
+      <td>${s.programType}</td>
+      <td>${s.category || '–'}</td>
+      <td>${s.trainingType || '–'}</td>
+      <td class="stats-score">${formatScore(scoreTotal(s), s.trainingType === '60 ligg ISSF')}</td>
+    </tr>
+  `).join('');
+}
+
+function drawLineChart(canvas, points) {
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const cssWidth = canvas.clientWidth || 300;
+  const cssHeight = canvas.clientHeight || 220;
+  canvas.width = cssWidth * dpr;
+  canvas.height = cssHeight * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+  const paddingLeft = 40;
+  const paddingRight = 12;
+  const paddingTop = 16;
+  const paddingBottom = 24;
+  const plotWidth = cssWidth - paddingLeft - paddingRight;
+  const plotHeight = cssHeight - paddingTop - paddingBottom;
+
+  const values = points.map(p => p.value);
+  let minVal = Math.min(...values);
+  let maxVal = Math.max(...values);
+  if (minVal === maxVal) { minVal -= 1; maxVal += 1; }
+  const pad = (maxVal - minVal) * 0.1;
+  minVal -= pad;
+  maxVal += pad;
+
+  const xFor = (i) => paddingLeft + (points.length === 1 ? plotWidth / 2 : (i / (points.length - 1)) * plotWidth);
+  const yFor = (v) => paddingTop + plotHeight - ((v - minVal) / (maxVal - minVal)) * plotHeight;
+
+  ctx.strokeStyle = '#2C2E33';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(paddingLeft, paddingTop);
+  ctx.lineTo(paddingLeft, paddingTop + plotHeight);
+  ctx.lineTo(paddingLeft + plotWidth, paddingTop + plotHeight);
+  ctx.stroke();
+
+  ctx.fillStyle = '#8B8D92';
+  ctx.font = '10px -apple-system, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(maxVal.toFixed(0), paddingLeft - 6, paddingTop + 4);
+  ctx.fillText(minVal.toFixed(0), paddingLeft - 6, paddingTop + plotHeight);
+
+  ctx.strokeStyle = '#B08D57';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  points.forEach((p, i) => {
+    const x = xFor(i);
+    const y = yFor(p.value);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  ctx.fillStyle = '#B08D57';
+  points.forEach((p, i) => {
+    const x = xFor(i);
+    const y = yFor(p.value);
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.fillStyle = '#8B8D92';
+  ctx.textAlign = 'center';
+  const labelIndices = points.length <= 5
+    ? points.map((_, i) => i)
+    : [0, Math.floor((points.length - 1) / 2), points.length - 1];
+  labelIndices.forEach(i => {
+    ctx.fillText(points[i].label, xFor(i), paddingTop + plotHeight + 16);
+  });
+}
 
 // ---- Init ----
 (async function init() {
