@@ -102,15 +102,47 @@ function renderStats() {
   const statsRow = document.getElementById('stats-row');
   const totalSessions = sessions.length;
   const totalShots = sessions.reduce((sum, s) => sum + s.shots.length, 0);
-  const avgScore = totalShots > 0
-    ? (sessions.reduce((sum, s) => sum + scoreTotal(s), 0) / totalShots).toFixed(1)
-    : '–';
 
   statsRow.innerHTML = `
     <div class="stat"><div class="stat-value">${totalSessions}</div><div class="stat-label">økter</div></div>
     <div class="stat"><div class="stat-value">${totalShots}</div><div class="stat-label">skudd registrert</div></div>
-    <div class="stat"><div class="stat-value">${avgScore}</div><div class="stat-label">snitt / skudd</div></div>
   `;
+}
+
+function computeTypeStats(sessionsArr) {
+  const map = {};
+  sessionsArr.forEach(s => {
+    const key = s.trainingType || 'Uten øvelse';
+    const total = scoreTotal(s);
+    if (!map[key]) map[key] = { sum: 0, count: 0, best: -Infinity, decimal: s.trainingType === '60 ligg ISSF' };
+    map[key].sum += total;
+    map[key].count += 1;
+    if (total > map[key].best) map[key].best = total;
+  });
+  return map;
+}
+
+function renderTypeStats() {
+  const wrap = document.getElementById('type-stats-list');
+  const map = computeTypeStats(sessions);
+  const keys = Object.keys(map);
+  if (keys.length === 0) {
+    wrap.innerHTML = '';
+    return;
+  }
+  wrap.innerHTML = keys.map(key => {
+    const { sum, count, best, decimal } = map[key];
+    const avg = sum / count;
+    return `
+      <li class="type-stats-item">
+        <div class="type-stats-name">${key}</div>
+        <div class="type-stats-values">
+          <span>Beste: ${formatScore(best, decimal)}</span>
+          <span>Snitt: ${avg.toFixed(1)}</span>
+        </div>
+      </li>
+    `;
+  }).join('');
 }
 
 function renderSessionList() {
@@ -129,7 +161,7 @@ function renderSessionList() {
     <li class="session-item" data-id="${s.id}">
       <div class="session-item-main">
         <div class="session-program">${s.programType}</div>
-        <div class="session-meta">${formatDate(s.date)}${s.trainingType ? ' · ' + s.trainingType : ''} · ${s.shots.length} skudd</div>
+        <div class="session-meta">${formatDate(s.date)}${s.category ? ' · ' + s.category : ''}${s.trainingType ? ' · ' + s.trainingType : ''} · ${s.shots.length} skudd</div>
       </div>
       <div class="session-score">${scoreTotal(s)}</div>
     </li>
@@ -189,6 +221,7 @@ function renderDetailPlott(session) {
 async function refreshList() {
   sessions = await getAllSessions();
   renderStats();
+  renderTypeStats();
   renderSessionList();
 }
 
@@ -198,6 +231,7 @@ function resetAddForm() {
   document.getElementById('add-title').textContent = 'Ny økt';
   document.getElementById('input-date').valueAsDate = new Date();
   document.getElementById('input-program').selectedIndex = 0;
+  document.getElementById('input-category').selectedIndex = 0;
   document.getElementById('input-type').selectedIndex = 0;
   document.getElementById('input-notes').value = '';
   document.getElementById('shot-position').selectedIndex = 0;
@@ -213,6 +247,7 @@ function openEditForm(session) {
   document.getElementById('add-title').textContent = 'Rediger økt';
   document.getElementById('input-date').value = session.date;
   document.getElementById('input-program').value = session.programType;
+  document.getElementById('input-category').value = session.category || 'Trening';
   if (session.trainingType) document.getElementById('input-type').value = session.trainingType;
   document.getElementById('input-notes').value = session.notes || '';
   draftShots = session.shots.map(s => ({ ...s }));
@@ -437,12 +472,14 @@ document.getElementById('lightbox').addEventListener('click', () => {
 document.getElementById('save-session').addEventListener('click', async () => {
   const date = document.getElementById('input-date').value || new Date().toISOString().slice(0, 10);
   const programType = document.getElementById('input-program').value;
+  const category = document.getElementById('input-category').value;
   const trainingType = document.getElementById('input-type').value;
   const notes = document.getElementById('input-notes').value;
 
   const session = {
     date,
     programType,
+    category,
     trainingType,
     notes,
     shots: draftShots,
@@ -474,6 +511,7 @@ async function openDetail(id) {
   content.innerHTML = `
     <div class="detail-row"><span class="detail-row-label">Dato</span><span class="detail-row-value">${formatDate(session.date)}</span></div>
     <div class="detail-row"><span class="detail-row-label">Bane</span><span class="detail-row-value">${session.programType}</span></div>
+    ${session.category ? `<div class="detail-row"><span class="detail-row-label">Type</span><span class="detail-row-value">${session.category}</span></div>` : ''}
     ${session.trainingType ? `<div class="detail-row"><span class="detail-row-label">Øvelse</span><span class="detail-row-value">${session.trainingType}</span></div>` : ''}
     ${session.trainingType !== 'Plott' ? `<div class="detail-row"><span class="detail-row-label">Totalt poeng</span><span class="detail-row-value">${formatScore(scoreTotal(session), session.trainingType === '60 ligg ISSF')}</span></div>` : ''}
     ${session.notes ? `<div class="detail-row"><span class="detail-row-label">Notater</span><span class="detail-row-value">${escapeHtml(session.notes)}</span></div>` : ''}

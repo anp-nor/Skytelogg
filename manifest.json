@@ -1,6 +1,6 @@
 {
-  "name": "RifleLog",
-  "short_name": "RifleLog",
+  "name": "Skytelogg",
+  "short_name": "Skytelogg",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#16171A",

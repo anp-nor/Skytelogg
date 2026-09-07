@@ -90,6 +90,33 @@ body {
   padding: 0;
 }
 
+.type-stats-list {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+}
+
+.type-stats-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 14px;
+}
+
+.type-stats-name {
+  color: var(--text);
+}
+
+.type-stats-values {
+  display: flex;
+  gap: 14px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--brass);
+}
+
 .session-item {
   display: flex;
   justify-content: space-between;
