@@ -19,8 +19,13 @@
     <h1>Skytelogg</h1>
     <p class="login-sub">Logg inn med e-post for å synkronisere øktene dine på tvers av enheter.</p>
     <input type="email" id="login-email" class="field-input" placeholder="din@epost.no" autocomplete="email">
-    <button id="send-magic-link" class="add-shot-btn login-btn">Send innloggingslenke</button>
+    <button id="send-magic-link" class="add-shot-btn login-btn">Send innloggingskode</button>
     <p id="login-status" class="login-status"></p>
+
+    <div class="otp-row">
+      <input type="text" id="login-otp" class="field-input" placeholder="6-sifret kode" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code">
+      <button id="verify-otp" class="add-shot-btn">Bekreft</button>
+    </div>
   </div>
 </div>
 
@@ -32,7 +37,6 @@
     <div class="topbar-sub">Treningsdagbok for DFS-skyting</div>
   </div>
   <div class="topbar-actions">
-    <button class="text-btn text-btn-primary" id="open-stats">Statistikk</button>
     <button class="text-btn" id="logout-btn">Logg ut</button>
   </div>
 </header>
@@ -49,7 +53,22 @@
   </div>
 </main>
 
-<button id="fab-add" class="fab" aria-label="Legg til økt">+</button>
+<button id="fab-add" class="fab" aria-label="Legg til trening">+</button>
+
+<nav id="bottom-nav" class="bottom-nav">
+  <button class="bottom-nav-btn" id="nav-stats">Statistikk</button>
+  <button class="bottom-nav-btn" id="nav-calendar">Kalender</button>
+  <button class="bottom-nav-btn" id="nav-goals">Målsetninger</button>
+</nav>
+
+<div id="add-menu" class="add-menu-overlay" hidden>
+  <div class="add-menu-box">
+    <button class="add-menu-btn" id="add-menu-shooting">Skyting</button>
+    <button class="add-menu-btn" id="add-menu-physical">Fysisk</button>
+    <button class="add-menu-btn" id="add-menu-mental">Mentalt</button>
+    <button class="text-btn" id="add-menu-cancel">Avbryt</button>
+  </div>
+</div>
 
 <!-- Add / Edit session view -->
 <main id="view-add" class="view" hidden>
@@ -60,20 +79,13 @@
   </header>
 
   <div class="form-block">
-    <label class="field-label" for="input-date">Dato</label>
-    <input type="date" id="input-date" class="field-input">
+    <label class="field-label" for="input-season">Sesong</label>
+    <select id="input-season" class="field-input"></select>
   </div>
 
   <div class="form-block">
-    <label class="field-label" for="input-program">Bane</label>
-    <select id="input-program" class="field-input">
-      <option value="Miniatyr 15m">Miniatyr 15m</option>
-      <option value="Bane 100m">Bane 100m</option>
-      <option value="Bane 200m">Bane 200m</option>
-      <option value="Bane 300m">Bane 300m</option>
-      <option value="Finfelt">Finfelt</option>
-      <option value="Grovfelt">Grovfelt</option>
-    </select>
+    <label class="field-label" for="input-date">Dato</label>
+    <input type="date" id="input-date" class="field-input">
   </div>
 
   <div class="form-block">
@@ -81,6 +93,7 @@
     <select id="input-category" class="field-input">
       <option value="Trening">Trening</option>
       <option value="Konkurranse">Konkurranse</option>
+      <option value="Tørrtrening">Tørrtrening</option>
     </select>
   </div>
 
@@ -98,6 +111,7 @@
       <option value="Omgang">Omgang</option>
       <option value="Grunnlag">Grunnlag</option>
       <option value="Plott">Plott</option>
+      <option value="Tørrtrening">Tørrtrening</option>
     </select>
   </div>
 
@@ -198,19 +212,11 @@
   </header>
 
   <div class="filter-row">
-    <select id="filter-program" class="field-input">
-      <option value="">Alle baner</option>
-      <option value="Miniatyr 15m">Miniatyr 15m</option>
-      <option value="Bane 100m">Bane 100m</option>
-      <option value="Bane 200m">Bane 200m</option>
-      <option value="Bane 300m">Bane 300m</option>
-      <option value="Finfelt">Finfelt</option>
-      <option value="Grovfelt">Grovfelt</option>
-    </select>
     <select id="filter-category" class="field-input">
       <option value="">Alle typer</option>
       <option value="Trening">Trening</option>
       <option value="Konkurranse">Konkurranse</option>
+      <option value="Tørrtrening">Tørrtrening</option>
     </select>
     <select id="filter-type" class="field-input">
       <option value="">Alle øvelser</option>
@@ -225,6 +231,7 @@
       <option value="Omgang">Omgang</option>
       <option value="Grunnlag">Grunnlag</option>
       <option value="Plott">Plott</option>
+      <option value="Tørrtrening">Tørrtrening</option>
     </select>
   </div>
 
@@ -239,10 +246,171 @@
   <div class="table-wrap">
     <table class="stats-table">
       <thead>
-        <tr><th>Dato</th><th>Bane</th><th>Type</th><th>Øvelse</th><th>Sum</th></tr>
+        <tr><th>Dato</th><th>Type</th><th>Øvelse</th><th>Sum</th></tr>
       </thead>
       <tbody id="stats-table-body"></tbody>
     </table>
+  </div>
+</main>
+
+<!-- Physical training add view -->
+<main id="view-physical-add" class="view" hidden>
+  <header class="subbar">
+    <button class="text-btn" id="cancel-physical">Avbryt</button>
+    <div class="subbar-title">Fysisk trening</div>
+    <button class="text-btn text-btn-primary" id="save-physical">Lagre</button>
+  </header>
+
+  <div class="form-block">
+    <label class="field-label" for="physical-season">Sesong</label>
+    <select id="physical-season" class="field-input"></select>
+  </div>
+
+  <div class="form-block">
+    <label class="field-label" for="physical-date">Dato</label>
+    <input type="date" id="physical-date" class="field-input">
+  </div>
+
+  <div class="form-block">
+    <label class="field-label" for="physical-type">Type</label>
+    <select id="physical-type" class="field-input">
+      <option value="Styrke">Styrke</option>
+      <option value="Kondisjon">Kondisjon</option>
+      <option value="Bevegelighet">Bevegelighet</option>
+    </select>
+  </div>
+
+  <div class="form-block">
+    <label class="field-label" for="physical-duration">Tid (minutter)</label>
+    <input type="number" id="physical-duration" class="field-input" placeholder="60">
+  </div>
+
+  <div class="form-block">
+    <label class="field-label" for="physical-comment">Kommentar</label>
+    <input type="text" id="physical-comment" class="field-input" placeholder="Notater...">
+  </div>
+</main>
+
+<!-- Mental training add view -->
+<main id="view-mental-add" class="view" hidden>
+  <header class="subbar">
+    <button class="text-btn" id="cancel-mental">Avbryt</button>
+    <div class="subbar-title">Mental trening</div>
+    <button class="text-btn text-btn-primary" id="save-mental">Lagre</button>
+  </header>
+
+  <div class="form-block">
+    <label class="field-label" for="mental-season">Sesong</label>
+    <select id="mental-season" class="field-input"></select>
+  </div>
+
+  <div class="form-block">
+    <label class="field-label" for="mental-date">Dato</label>
+    <input type="date" id="mental-date" class="field-input">
+  </div>
+
+  <div class="form-block">
+    <label class="field-label" for="mental-type">Type</label>
+    <select id="mental-type" class="field-input">
+      <option value="Visualisering">Visualisering</option>
+      <option value="Triggerord og fokus">Triggerord og fokus</option>
+    </select>
+  </div>
+
+  <div class="form-block">
+    <label class="field-label" for="mental-duration">Tid (minutter)</label>
+    <input type="number" id="mental-duration" class="field-input" placeholder="20">
+  </div>
+
+  <div class="form-block">
+    <label class="field-label" for="mental-comment">Kommentar</label>
+    <input type="text" id="mental-comment" class="field-input" placeholder="Notater...">
+  </div>
+</main>
+
+<!-- Calendar view -->
+<main id="view-calendar" class="view" hidden>
+  <header class="subbar">
+    <button class="text-btn" id="back-calendar">Tilbake</button>
+    <div class="subbar-title">Kalender</div>
+    <span></span>
+  </header>
+
+  <div class="calendar-nav">
+    <button class="text-btn" id="cal-prev">←</button>
+    <div class="calendar-month-label" id="cal-month-label"></div>
+    <button class="text-btn" id="cal-next">→</button>
+  </div>
+
+  <div class="calendar-legend">
+    <span class="legend-item"><span class="legend-dot dot-shooting"></span>Skytetrening</span>
+    <span class="legend-item"><span class="legend-dot dot-competition"></span>Konkurranse</span>
+    <span class="legend-item"><span class="legend-dot dot-physical"></span>Fysisk</span>
+    <span class="legend-item"><span class="legend-dot dot-mental"></span>Mentalt</span>
+  </div>
+
+  <div class="calendar-weekdays">
+    <span>Man</span><span>Tir</span><span>Ons</span><span>Tor</span><span>Fre</span><span>Lør</span><span>Søn</span>
+  </div>
+  <div class="calendar-grid" id="calendar-grid"></div>
+
+  <div class="section-label" id="cal-day-label" hidden></div>
+  <ul class="session-list" id="cal-day-list"></ul>
+</main>
+
+<!-- Goals (Målsetninger) view -->
+<main id="view-goals" class="view" hidden>
+  <header class="subbar">
+    <button class="text-btn" id="back-goals">Tilbake</button>
+    <div class="subbar-title">Målsetninger</div>
+    <button class="text-btn text-btn-primary" id="save-goals">Lagre</button>
+  </header>
+
+  <div class="form-block">
+    <label class="field-label" for="goals-season">Sesong</label>
+    <select id="goals-season" class="field-input"></select>
+  </div>
+
+  <div class="goal-area">
+    <div class="goal-area-header">
+      <div class="goal-area-title">Prestasjonsmål</div>
+      <label class="goal-achieved-label">
+        <input type="checkbox" id="goal-prestasjon-achieved">
+        Oppnådd
+      </label>
+    </div>
+    <input type="text" id="goal-prestasjon-line1" class="field-input" placeholder="Linje 1">
+    <input type="text" id="goal-prestasjon-line2" class="field-input" placeholder="Linje 2">
+    <input type="text" id="goal-prestasjon-line3" class="field-input" placeholder="Linje 3">
+    <input type="text" id="goal-prestasjon-comment" class="field-input" placeholder="Kommentar">
+  </div>
+
+  <div class="goal-area">
+    <div class="goal-area-header">
+      <div class="goal-area-title">Teknisk mål</div>
+      <label class="goal-achieved-label">
+        <input type="checkbox" id="goal-teknisk-achieved">
+        Oppnådd
+      </label>
+    </div>
+    <input type="text" id="goal-teknisk-line1" class="field-input" placeholder="Linje 1">
+    <input type="text" id="goal-teknisk-line2" class="field-input" placeholder="Linje 2">
+    <input type="text" id="goal-teknisk-line3" class="field-input" placeholder="Linje 3">
+    <input type="text" id="goal-teknisk-comment" class="field-input" placeholder="Kommentar">
+  </div>
+
+  <div class="goal-area">
+    <div class="goal-area-header">
+      <div class="goal-area-title">Mentalt mål</div>
+      <label class="goal-achieved-label">
+        <input type="checkbox" id="goal-mental-achieved">
+        Oppnådd
+      </label>
+    </div>
+    <input type="text" id="goal-mental-line1" class="field-input" placeholder="Linje 1">
+    <input type="text" id="goal-mental-line2" class="field-input" placeholder="Linje 2">
+    <input type="text" id="goal-mental-line3" class="field-input" placeholder="Linje 3">
+    <input type="text" id="goal-mental-comment" class="field-input" placeholder="Kommentar">
   </div>
 </main>
 
