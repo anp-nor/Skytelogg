@@ -1,4 +1,13 @@
-// ---- IndexedDB setup ----
+// ---- Supabase setup ----
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const SUPABASE_URL = 'https://mhwwtsvjnmvznphyartv.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_Em-ZMyseOn8LXXKRXf3FQg_JnFIsT-k';
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let currentUser = null;
+
+// ---- Local cache (IndexedDB) — used only for offline reading ----
 const DB_NAME = 'riflelog';
 const DB_VERSION = 1;
 let db;
@@ -9,8 +18,7 @@ function openDB() {
     req.onupgradeneeded = (e) => {
       const database = e.target.result;
       if (!database.objectStoreNames.contains('sessions')) {
-        const store = database.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true });
-        store.createIndex('date', 'date');
+        database.createObjectStore('sessions', { keyPath: 'id' });
       }
     };
     req.onsuccess = (e) => { db = e.target.result; resolve(db); };
@@ -18,16 +26,18 @@ function openDB() {
   });
 }
 
-function addSession(session) {
+function cacheSessionsLocally(sessionsArr) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('sessions', 'readwrite');
-    const req = tx.objectStore('sessions').add(session);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = (e) => reject(e);
+    const store = tx.objectStore('sessions');
+    store.clear();
+    sessionsArr.forEach(s => store.put(s));
+    tx.oncomplete = () => resolve();
+    tx.onerror = (e) => reject(e);
   });
 }
 
-function getAllSessions() {
+function getCachedSessions() {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('sessions', 'readonly');
     const req = tx.objectStore('sessions').getAll();
@@ -36,22 +46,56 @@ function getAllSessions() {
   });
 }
 
-function updateSession(id, data) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('sessions', 'readwrite');
-    const req = tx.objectStore('sessions').put({ ...data, id });
-    req.onsuccess = () => resolve();
-    req.onerror = (e) => reject(e);
-  });
+// ---- Row <-> session mapping ----
+function rowToSession(row) {
+  return {
+    id: row.id,
+    date: row.date,
+    programType: row.program_type,
+    category: row.category,
+    trainingType: row.training_type,
+    notes: row.notes,
+    shots: row.shots || [],
+    images: row.images || []
+  };
 }
 
-function deleteSessionById(id) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('sessions', 'readwrite');
-    const req = tx.objectStore('sessions').delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror = (e) => reject(e);
-  });
+function sessionToRow(session) {
+  return {
+    date: session.date,
+    program_type: session.programType,
+    category: session.category,
+    training_type: session.trainingType,
+    notes: session.notes,
+    shots: session.shots,
+    images: session.images
+  };
+}
+
+// ---- Remote CRUD (Supabase) ----
+async function fetchSessions() {
+  const { data, error } = await supabase.from('sessions').select('*').order('date', { ascending: false });
+  if (error) throw error;
+  const mapped = data.map(rowToSession);
+  await cacheSessionsLocally(mapped);
+  return mapped;
+}
+
+async function insertSession(session) {
+  const row = { ...sessionToRow(session), user_id: currentUser.id };
+  const { data, error } = await supabase.from('sessions').insert(row).select().single();
+  if (error) throw error;
+  return rowToSession(data);
+}
+
+async function updateSessionRemote(id, session) {
+  const { error } = await supabase.from('sessions').update(sessionToRow(session)).eq('id', id);
+  if (error) throw error;
+}
+
+async function deleteSessionRemote(id) {
+  const { error } = await supabase.from('sessions').delete().eq('id', id);
+  if (error) throw error;
 }
 
 // ---- App state ----
@@ -169,7 +213,7 @@ function renderSessionList() {
   `).join('');
 
   list.querySelectorAll('.session-item').forEach(item => {
-    item.addEventListener('click', () => openDetail(Number(item.dataset.id)));
+    item.addEventListener('click', () => openDetail(item.dataset.id));
   });
 }
 
@@ -220,7 +264,12 @@ function renderDetailPlott(session) {
 }
 
 async function refreshList() {
-  sessions = await getAllSessions();
+  try {
+    sessions = await fetchSessions();
+  } catch (err) {
+    console.error('Henting fra Supabase feilet, bruker lokal cache', err);
+    sessions = await getCachedSessions();
+  }
   renderStats();
   renderTypeStats();
   renderSessionList();
@@ -489,14 +538,23 @@ document.getElementById('save-session').addEventListener('click', async () => {
 
   if (editingId != null) {
     const id = editingId;
-    await updateSession(id, session);
-    editingId = null;
-    await refreshList();
-    openDetail(id);
+    try {
+      await updateSessionRemote(id, session);
+      editingId = null;
+      await refreshList();
+      openDetail(id);
+    } catch (err) {
+      alert('Kunne ikke lagre endringen. Sjekk nettforbindelsen og prøv igjen.');
+    }
   } else {
-    await addSession(session);
-    await refreshList();
-    showView(viewList);
+    try {
+      await insertSession(session);
+      editingId = null;
+      await refreshList();
+      showView(viewList);
+    } catch (err) {
+      alert('Kunne ikke lagre økten. Sjekk nettforbindelsen og prøv igjen.');
+    }
   }
 });
 
@@ -553,9 +611,13 @@ document.getElementById('edit-session').addEventListener('click', () => {
 
 document.getElementById('delete-session').addEventListener('click', async () => {
   if (currentDetailId == null) return;
-  await deleteSessionById(currentDetailId);
-  await refreshList();
-  showView(viewList);
+  try {
+    await deleteSessionRemote(currentDetailId);
+    await refreshList();
+    showView(viewList);
+  } catch (err) {
+    alert('Kunne ikke slette. Sjekk nettforbindelsen og prøv igjen.');
+  }
 });
 
 // ---- Statistics view ----
@@ -690,9 +752,54 @@ function drawLineChart(canvas, points) {
 }
 
 // ---- Init ----
+async function initAuth() {
+  const { data: { session } } = await supabase.auth.getSession();
+  currentUser = session?.user || null;
+  applyAuthUI();
+  if (currentUser) await refreshList();
+
+  supabase.auth.onAuthStateChange(async (_event, session) => {
+    currentUser = session?.user || null;
+    applyAuthUI();
+    if (currentUser) {
+      if (window.location.hash.includes('access_token')) {
+        history.replaceState(null, '', window.location.pathname);
+      }
+      await refreshList();
+    }
+  });
+}
+
+function applyAuthUI() {
+  const loggedIn = !!currentUser;
+  document.getElementById('view-login').hidden = loggedIn;
+  document.getElementById('app-shell').hidden = !loggedIn;
+}
+
+document.getElementById('send-magic-link').addEventListener('click', async () => {
+  const email = document.getElementById('login-email').value.trim();
+  const statusEl = document.getElementById('login-status');
+  if (!email) {
+    statusEl.textContent = 'Skriv inn e-postadressen din.';
+    return;
+  }
+  statusEl.textContent = 'Sender lenke...';
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: window.location.href.split('#')[0] }
+  });
+  statusEl.textContent = error
+    ? 'Noe gikk galt. Prøv igjen.'
+    : 'Sjekk e-posten din og trykk på lenken for å logge inn.';
+});
+
+document.getElementById('logout-btn').addEventListener('click', async () => {
+  await supabase.auth.signOut();
+});
+
 (async function init() {
   await openDB();
-  await refreshList();
+  await initAuth();
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('service-worker.js').catch(() => {});
   }

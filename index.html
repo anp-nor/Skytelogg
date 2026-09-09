@@ -14,12 +14,27 @@
 </head>
 <body>
 
+<div id="view-login" class="view login-view" hidden>
+  <div class="login-box">
+    <h1>Skytelogg</h1>
+    <p class="login-sub">Logg inn med e-post for å synkronisere øktene dine på tvers av enheter.</p>
+    <input type="email" id="login-email" class="field-input" placeholder="din@epost.no" autocomplete="email">
+    <button id="send-magic-link" class="add-shot-btn login-btn">Send innloggingslenke</button>
+    <p id="login-status" class="login-status"></p>
+  </div>
+</div>
+
+<div id="app-shell" hidden>
+
 <header class="topbar">
   <div class="topbar-text">
     <h1>Skytelogg</h1>
     <div class="topbar-sub">Treningsdagbok for DFS-skyting</div>
   </div>
-  <button class="text-btn text-btn-primary" id="open-stats">Statistikk</button>
+  <div class="topbar-actions">
+    <button class="text-btn text-btn-primary" id="open-stats">Statistikk</button>
+    <button class="text-btn" id="logout-btn">Logg ut</button>
+  </div>
 </header>
 
 <main id="view-list" class="view">
@@ -231,10 +246,12 @@
   </div>
 </main>
 
+</div>
+
 <div id="lightbox" class="lightbox" hidden>
   <img id="lightbox-img" src="" alt="">
 </div>
 
-<script src="app.js"></script>
+<script type="module" src="app.js"></script>
 </body>
 </html>

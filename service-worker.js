@@ -1,4 +1,4 @@
-const CACHE_NAME = 'riflelog-v10';
+const CACHE_NAME = 'riflelog-v11';
 const ASSETS = [
   './',
   './index.html',
