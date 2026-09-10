@@ -71,6 +71,10 @@ body {
   padding: 20px;
 }
 
+.login-view[hidden] {
+  display: none;
+}
+
 .login-box {
   width: 100%;
   max-width: 340px;
@@ -484,6 +488,10 @@ body {
   z-index: 50;
 }
 
+.bottom-nav[hidden] {
+  display: none;
+}
+
 .bottom-nav-btn {
   flex: 1;
   background: none;
@@ -505,6 +513,10 @@ body {
   display: flex;
   align-items: flex-end;
   z-index: 200;
+}
+
+.add-menu-overlay[hidden] {
+  display: none;
 }
 
 .add-menu-box {

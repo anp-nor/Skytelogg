@@ -1132,8 +1132,8 @@ document.getElementById('send-magic-link').addEventListener('click', async () =>
     options: { emailRedirectTo: window.location.href.split('#')[0] }
   });
   statusEl.textContent = error
-    ? 'Noe gikk galt. Prøv igjen.'
-    : 'Sjekk e-posten din — tast inn 6-sifret kode under.';
+    ? `Feil: ${error.message}`
+    : 'Sjekk e-posten din — tast inn koden under.';
 });
 
 document.getElementById('verify-otp').addEventListener('click', async () => {
@@ -1146,7 +1146,7 @@ document.getElementById('verify-otp').addEventListener('click', async () => {
   }
   statusEl.textContent = 'Bekrefter...';
   const { error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
-  statusEl.textContent = error ? 'Feil kode. Prøv igjen.' : 'Innlogget!';
+  statusEl.textContent = error ? `Feil: ${error.message}` : 'Innlogget!';
 });
 
 document.getElementById('logout-btn').addEventListener('click', async () => {
