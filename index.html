@@ -45,12 +45,6 @@
   <div class="stats-row" id="stats-row"></div>
   <div class="section-label">Per øvelse</div>
   <ul id="type-stats-list" class="type-stats-list"></ul>
-  <div class="section-label">Økter</div>
-  <ul id="session-list" class="session-list"></ul>
-  <div id="empty-state" class="empty-state" hidden>
-    <p>Ingen økter registrert enda.</p>
-    <p class="empty-sub">Trykk + for å registrere din første økt.</p>
-  </div>
 </main>
 
 <button id="fab-add" class="fab" aria-label="Legg til trening">+</button>
@@ -59,6 +53,7 @@
   <button class="bottom-nav-btn" id="nav-stats">Statistikk</button>
   <button class="bottom-nav-btn" id="nav-calendar">Kalender</button>
   <button class="bottom-nav-btn" id="nav-goals">Målsetninger</button>
+  <button class="bottom-nav-btn" id="nav-history">Tidligere økter</button>
 </nav>
 
 <div id="add-menu" class="add-menu-overlay" hidden>
@@ -257,7 +252,7 @@
 <main id="view-physical-add" class="view" hidden>
   <header class="subbar">
     <button class="text-btn" id="cancel-physical">Avbryt</button>
-    <div class="subbar-title">Fysisk trening</div>
+    <div class="subbar-title" id="physical-title">Fysisk trening</div>
     <button class="text-btn text-btn-primary" id="save-physical">Lagre</button>
   </header>
 
@@ -289,13 +284,15 @@
     <label class="field-label" for="physical-comment">Kommentar</label>
     <input type="text" id="physical-comment" class="field-input" placeholder="Notater...">
   </div>
+
+  <button id="delete-physical" class="delete-full-btn" hidden>Slett</button>
 </main>
 
 <!-- Mental training add view -->
 <main id="view-mental-add" class="view" hidden>
   <header class="subbar">
     <button class="text-btn" id="cancel-mental">Avbryt</button>
-    <div class="subbar-title">Mental trening</div>
+    <div class="subbar-title" id="mental-title">Mental trening</div>
     <button class="text-btn text-btn-primary" id="save-mental">Lagre</button>
   </header>
 
@@ -326,6 +323,8 @@
     <label class="field-label" for="mental-comment">Kommentar</label>
     <input type="text" id="mental-comment" class="field-input" placeholder="Notater...">
   </div>
+
+  <button id="delete-mental" class="delete-full-btn" hidden>Slett</button>
 </main>
 
 <!-- Calendar view -->
@@ -374,43 +373,71 @@
   <div class="goal-area">
     <div class="goal-area-header">
       <div class="goal-area-title">Prestasjonsmål</div>
-      <label class="goal-achieved-label">
-        <input type="checkbox" id="goal-prestasjon-achieved">
-        Oppnådd
-      </label>
     </div>
-    <input type="text" id="goal-prestasjon-line1" class="field-input" placeholder="Linje 1">
-    <input type="text" id="goal-prestasjon-line2" class="field-input" placeholder="Linje 2">
-    <input type="text" id="goal-prestasjon-line3" class="field-input" placeholder="Linje 3">
+    <div class="goal-line-row">
+      <input type="text" id="goal-prestasjon-line1" class="field-input" placeholder="Linje 1">
+      <label class="goal-achieved-label"><input type="checkbox" id="goal-prestasjon-achieved1">Oppnådd</label>
+    </div>
+    <div class="goal-line-row">
+      <input type="text" id="goal-prestasjon-line2" class="field-input" placeholder="Linje 2">
+      <label class="goal-achieved-label"><input type="checkbox" id="goal-prestasjon-achieved2">Oppnådd</label>
+    </div>
+    <div class="goal-line-row">
+      <input type="text" id="goal-prestasjon-line3" class="field-input" placeholder="Linje 3">
+      <label class="goal-achieved-label"><input type="checkbox" id="goal-prestasjon-achieved3">Oppnådd</label>
+    </div>
     <input type="text" id="goal-prestasjon-comment" class="field-input" placeholder="Kommentar">
   </div>
 
   <div class="goal-area">
     <div class="goal-area-header">
       <div class="goal-area-title">Teknisk mål</div>
-      <label class="goal-achieved-label">
-        <input type="checkbox" id="goal-teknisk-achieved">
-        Oppnådd
-      </label>
     </div>
-    <input type="text" id="goal-teknisk-line1" class="field-input" placeholder="Linje 1">
-    <input type="text" id="goal-teknisk-line2" class="field-input" placeholder="Linje 2">
-    <input type="text" id="goal-teknisk-line3" class="field-input" placeholder="Linje 3">
+    <div class="goal-line-row">
+      <input type="text" id="goal-teknisk-line1" class="field-input" placeholder="Linje 1">
+      <label class="goal-achieved-label"><input type="checkbox" id="goal-teknisk-achieved1">Oppnådd</label>
+    </div>
+    <div class="goal-line-row">
+      <input type="text" id="goal-teknisk-line2" class="field-input" placeholder="Linje 2">
+      <label class="goal-achieved-label"><input type="checkbox" id="goal-teknisk-achieved2">Oppnådd</label>
+    </div>
+    <div class="goal-line-row">
+      <input type="text" id="goal-teknisk-line3" class="field-input" placeholder="Linje 3">
+      <label class="goal-achieved-label"><input type="checkbox" id="goal-teknisk-achieved3">Oppnådd</label>
+    </div>
     <input type="text" id="goal-teknisk-comment" class="field-input" placeholder="Kommentar">
   </div>
 
   <div class="goal-area">
     <div class="goal-area-header">
       <div class="goal-area-title">Mentalt mål</div>
-      <label class="goal-achieved-label">
-        <input type="checkbox" id="goal-mental-achieved">
-        Oppnådd
-      </label>
     </div>
-    <input type="text" id="goal-mental-line1" class="field-input" placeholder="Linje 1">
-    <input type="text" id="goal-mental-line2" class="field-input" placeholder="Linje 2">
-    <input type="text" id="goal-mental-line3" class="field-input" placeholder="Linje 3">
+    <div class="goal-line-row">
+      <input type="text" id="goal-mental-line1" class="field-input" placeholder="Linje 1">
+      <label class="goal-achieved-label"><input type="checkbox" id="goal-mental-achieved1">Oppnådd</label>
+    </div>
+    <div class="goal-line-row">
+      <input type="text" id="goal-mental-line2" class="field-input" placeholder="Linje 2">
+      <label class="goal-achieved-label"><input type="checkbox" id="goal-mental-achieved2">Oppnådd</label>
+    </div>
+    <div class="goal-line-row">
+      <input type="text" id="goal-mental-line3" class="field-input" placeholder="Linje 3">
+      <label class="goal-achieved-label"><input type="checkbox" id="goal-mental-achieved3">Oppnådd</label>
+    </div>
     <input type="text" id="goal-mental-comment" class="field-input" placeholder="Kommentar">
+  </div>
+</main>
+
+<!-- History (Tidligere økter) view -->
+<main id="view-history" class="view" hidden>
+  <header class="subbar">
+    <button class="text-btn" id="back-history">Tilbake</button>
+    <div class="subbar-title">Tidligere økter</div>
+    <span></span>
+  </header>
+  <ul id="history-list" class="session-list"></ul>
+  <div id="history-empty" class="empty-state" hidden>
+    <p>Ingen økter registrert enda.</p>
   </div>
 </main>
 

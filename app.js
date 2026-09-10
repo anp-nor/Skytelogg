@@ -125,6 +125,16 @@ async function insertPhysicalSession(entry) {
   if (error) throw error;
 }
 
+async function updatePhysicalSession(id, entry) {
+  const { error } = await supabase.from('physical_sessions').update(entry).eq('id', id);
+  if (error) throw error;
+}
+
+async function deletePhysicalSession(id) {
+  const { error } = await supabase.from('physical_sessions').delete().eq('id', id);
+  if (error) throw error;
+}
+
 // ---- Mental training CRUD ----
 async function fetchMentalSessions() {
   const { data, error } = await supabase.from('mental_sessions').select('*').order('date', { ascending: false });
@@ -135,6 +145,16 @@ async function fetchMentalSessions() {
 async function insertMentalSession(entry) {
   const row = { ...entry, user_id: currentUser.id };
   const { error } = await supabase.from('mental_sessions').insert(row);
+  if (error) throw error;
+}
+
+async function updateMentalSession(id, entry) {
+  const { error } = await supabase.from('mental_sessions').update(entry).eq('id', id);
+  if (error) throw error;
+}
+
+async function deleteMentalSession(id) {
+  const { error } = await supabase.from('mental_sessions').delete().eq('id', id);
   if (error) throw error;
 }
 
@@ -160,6 +180,8 @@ let draftShots = [];
 let draftImages = [];
 let currentDetailId = null;
 let editingId = null;
+let editingPhysicalId = null;
+let editingMentalId = null;
 let isDecimalMode = false;
 let isPlottMode = false;
 
@@ -189,8 +211,9 @@ const viewPhysicalAdd = document.getElementById('view-physical-add');
 const viewMentalAdd = document.getElementById('view-mental-add');
 const viewCalendar = document.getElementById('view-calendar');
 const viewGoals = document.getElementById('view-goals');
+const viewHistory = document.getElementById('view-history');
 const bottomNav = document.getElementById('bottom-nav');
-const allViews = [viewList, viewAdd, viewDetail, viewStats, viewPhysicalAdd, viewMentalAdd, viewCalendar, viewGoals];
+const allViews = [viewList, viewAdd, viewDetail, viewStats, viewPhysicalAdd, viewMentalAdd, viewCalendar, viewGoals, viewHistory];
 
 function showView(view) {
   allViews.forEach(v => v.hidden = true);
@@ -212,15 +235,15 @@ function sessionTitle(session) {
 
 function renderStats() {
   const statsRow = document.getElementById('stats-row');
-  const totalSessions = sessions.length;
-  const totalShots = sessions.reduce((sum, s) => sum + s.shots.length, 0);
-  const totalGoals = goalsData.length;
-  const achievedGoals = goalsData.filter(g => g.achieved).length;
+  const totalGoalSlots = goalsData.length * 3;
+  const achievedGoalSlots = goalsData.reduce((sum, g) =>
+    sum + (g.achieved1 ? 1 : 0) + (g.achieved2 ? 1 : 0) + (g.achieved3 ? 1 : 0), 0);
 
   statsRow.innerHTML = `
-    <div class="stat"><div class="stat-value">${totalSessions}</div><div class="stat-label">økter</div></div>
-    <div class="stat"><div class="stat-value">${totalShots}</div><div class="stat-label">skudd registrert</div></div>
-    <div class="stat"><div class="stat-value">${achievedGoals}/${totalGoals}</div><div class="stat-label">mål oppnådd</div></div>
+    <div class="stat"><div class="stat-value">${sessions.length}</div><div class="stat-label">skyting</div></div>
+    <div class="stat"><div class="stat-value">${physicalSessions.length}</div><div class="stat-label">fysisk</div></div>
+    <div class="stat"><div class="stat-value">${mentalSessions.length}</div><div class="stat-label">mentalt</div></div>
+    <div class="stat"><div class="stat-value">${achievedGoalSlots}/${totalGoalSlots}</div><div class="stat-label">mål oppnådd</div></div>
   `;
 }
 
@@ -260,30 +283,56 @@ function renderTypeStats() {
   }).join('');
 }
 
-function renderSessionList() {
-  const list = document.getElementById('session-list');
-  const emptyState = document.getElementById('empty-state');
-  const sorted = [...sessions].sort((a, b) => new Date(b.date) - new Date(a.date));
+function buildHistoryItems() {
+  const items = [];
+  sessions.forEach(s => items.push({
+    kind: 'skyting', date: s.date, title: sessionTitle(s),
+    meta: `${s.category || ''} · ${s.shots.length} skudd`,
+    score: scoreTotal(s), data: s
+  }));
+  physicalSessions.forEach(p => items.push({
+    kind: 'fysisk', date: p.date, title: `Fysisk: ${p.type}`,
+    meta: `${p.duration_minutes ? p.duration_minutes + ' min' : ''}${p.comment ? ' · ' + p.comment : ''}`,
+    score: null, data: p
+  }));
+  mentalSessions.forEach(m => items.push({
+    kind: 'mentalt', date: m.date, title: `Mentalt: ${m.type}`,
+    meta: `${m.duration_minutes ? m.duration_minutes + ' min' : ''}${m.comment ? ' · ' + m.comment : ''}`,
+    score: null, data: m
+  }));
+  items.sort((a, b) => new Date(b.date) - new Date(a.date));
+  return items;
+}
 
-  if (sorted.length === 0) {
+function renderHistoryList() {
+  const list = document.getElementById('history-list');
+  const emptyState = document.getElementById('history-empty');
+  const items = buildHistoryItems();
+
+  if (items.length === 0) {
     list.innerHTML = '';
     emptyState.hidden = false;
     return;
   }
   emptyState.hidden = true;
 
-  list.innerHTML = sorted.map(s => `
-    <li class="session-item" data-id="${s.id}">
+  list.innerHTML = items.map((item, i) => `
+    <li class="session-item" data-index="${i}">
       <div class="session-item-main">
-        <div class="session-program">${sessionTitle(s)}</div>
-        <div class="session-meta">${formatDate(s.date)}${s.category ? ' · ' + s.category : ''} · ${s.shots.length} skudd</div>
+        <div class="session-program">${item.title}</div>
+        <div class="session-meta">${formatDate(item.date)}${item.meta ? ' · ' + item.meta : ''}</div>
       </div>
-      <div class="session-score">${scoreTotal(s)}</div>
+      ${item.score !== null ? `<div class="session-score">${item.score}</div>` : ''}
     </li>
   `).join('');
 
-  list.querySelectorAll('.session-item').forEach(item => {
-    item.addEventListener('click', () => openDetail(item.dataset.id));
+  list.querySelectorAll('.session-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const item = items[Number(el.dataset.index)];
+      if (item.kind === 'skyting') openDetail(item.data.id);
+      else if (item.kind === 'fysisk') openPhysicalDetail(item.data);
+      else if (item.kind === 'mentalt') openMentalDetail(item.data);
+    });
   });
 }
 
@@ -357,7 +406,6 @@ async function refreshList() {
   }
   renderStats();
   renderTypeStats();
-  renderSessionList();
 }
 
 // ---- Add session flow ----
@@ -857,6 +905,9 @@ function drawLineChart(canvas, points) {
 
 // ---- Physical training form ----
 function resetPhysicalForm() {
+  editingPhysicalId = null;
+  document.getElementById('physical-title').textContent = 'Fysisk trening';
+  document.getElementById('delete-physical').hidden = true;
   populateSeasonSelect(document.getElementById('physical-season'));
   document.getElementById('physical-date').valueAsDate = new Date();
   document.getElementById('physical-type').selectedIndex = 0;
@@ -864,7 +915,22 @@ function resetPhysicalForm() {
   document.getElementById('physical-comment').value = '';
 }
 
-document.getElementById('cancel-physical').addEventListener('click', () => showView(viewList));
+function openPhysicalDetail(entry) {
+  editingPhysicalId = entry.id;
+  document.getElementById('physical-title').textContent = 'Rediger fysisk trening';
+  document.getElementById('delete-physical').hidden = false;
+  populateSeasonSelect(document.getElementById('physical-season'));
+  if (entry.season) document.getElementById('physical-season').value = entry.season;
+  document.getElementById('physical-date').value = entry.date;
+  document.getElementById('physical-type').value = entry.type;
+  document.getElementById('physical-duration').value = entry.duration_minutes || '';
+  document.getElementById('physical-comment').value = entry.comment || '';
+  showView(viewPhysicalAdd);
+}
+
+document.getElementById('cancel-physical').addEventListener('click', () => {
+  showView(editingPhysicalId != null ? viewHistory : viewList);
+});
 
 document.getElementById('save-physical').addEventListener('click', async () => {
   const date = document.getElementById('physical-date').value || new Date().toISOString().slice(0, 10);
@@ -874,16 +940,40 @@ document.getElementById('save-physical').addEventListener('click', async () => {
   const duration_minutes = durationVal ? Number(durationVal) : null;
   const comment = document.getElementById('physical-comment').value;
   try {
-    await insertPhysicalSession({ date, season, type, duration_minutes, comment });
-    await refreshList();
-    showView(viewList);
+    if (editingPhysicalId != null) {
+      await updatePhysicalSession(editingPhysicalId, { date, season, type, duration_minutes, comment });
+      editingPhysicalId = null;
+      await refreshList();
+      renderHistoryList();
+      showView(viewHistory);
+    } else {
+      await insertPhysicalSession({ date, season, type, duration_minutes, comment });
+      await refreshList();
+      showView(viewList);
+    }
   } catch (err) {
     alert('Kunne ikke lagre. Sjekk nettforbindelsen og prøv igjen.');
   }
 });
 
+document.getElementById('delete-physical').addEventListener('click', async () => {
+  if (editingPhysicalId == null) return;
+  try {
+    await deletePhysicalSession(editingPhysicalId);
+    editingPhysicalId = null;
+    await refreshList();
+    renderHistoryList();
+    showView(viewHistory);
+  } catch (err) {
+    alert('Kunne ikke slette. Sjekk nettforbindelsen og prøv igjen.');
+  }
+});
+
 // ---- Mental training form ----
 function resetMentalForm() {
+  editingMentalId = null;
+  document.getElementById('mental-title').textContent = 'Mental trening';
+  document.getElementById('delete-mental').hidden = true;
   populateSeasonSelect(document.getElementById('mental-season'));
   document.getElementById('mental-date').valueAsDate = new Date();
   document.getElementById('mental-type').selectedIndex = 0;
@@ -891,7 +981,22 @@ function resetMentalForm() {
   document.getElementById('mental-comment').value = '';
 }
 
-document.getElementById('cancel-mental').addEventListener('click', () => showView(viewList));
+function openMentalDetail(entry) {
+  editingMentalId = entry.id;
+  document.getElementById('mental-title').textContent = 'Rediger mental trening';
+  document.getElementById('delete-mental').hidden = false;
+  populateSeasonSelect(document.getElementById('mental-season'));
+  if (entry.season) document.getElementById('mental-season').value = entry.season;
+  document.getElementById('mental-date').value = entry.date;
+  document.getElementById('mental-type').value = entry.type;
+  document.getElementById('mental-duration').value = entry.duration_minutes || '';
+  document.getElementById('mental-comment').value = entry.comment || '';
+  showView(viewMentalAdd);
+}
+
+document.getElementById('cancel-mental').addEventListener('click', () => {
+  showView(editingMentalId != null ? viewHistory : viewList);
+});
 
 document.getElementById('save-mental').addEventListener('click', async () => {
   const date = document.getElementById('mental-date').value || new Date().toISOString().slice(0, 10);
@@ -901,11 +1006,32 @@ document.getElementById('save-mental').addEventListener('click', async () => {
   const duration_minutes = durationVal ? Number(durationVal) : null;
   const comment = document.getElementById('mental-comment').value;
   try {
-    await insertMentalSession({ date, season, type, duration_minutes, comment });
-    await refreshList();
-    showView(viewList);
+    if (editingMentalId != null) {
+      await updateMentalSession(editingMentalId, { date, season, type, duration_minutes, comment });
+      editingMentalId = null;
+      await refreshList();
+      renderHistoryList();
+      showView(viewHistory);
+    } else {
+      await insertMentalSession({ date, season, type, duration_minutes, comment });
+      await refreshList();
+      showView(viewList);
+    }
   } catch (err) {
     alert('Kunne ikke lagre. Sjekk nettforbindelsen og prøv igjen.');
+  }
+});
+
+document.getElementById('delete-mental').addEventListener('click', async () => {
+  if (editingMentalId == null) return;
+  try {
+    await deleteMentalSession(editingMentalId);
+    editingMentalId = null;
+    await refreshList();
+    renderHistoryList();
+    showView(viewHistory);
+  } catch (err) {
+    alert('Kunne ikke slette. Sjekk nettforbindelsen og prøv igjen.');
   }
 });
 
@@ -982,7 +1108,7 @@ function selectCalendarDay(dateKey, el) {
   let html = '';
   daySessions.forEach(s => {
     html += `
-      <li class="session-item" data-id="${s.id}">
+      <li class="session-item" data-kind="skyting" data-id="${s.id}">
         <div class="session-item-main">
           <div class="session-program">${sessionTitle(s)}</div>
           <div class="session-meta">${s.category || ''} · ${s.shots.length} skudd</div>
@@ -993,7 +1119,7 @@ function selectCalendarDay(dateKey, el) {
   });
   dayPhysical.forEach(p => {
     html += `
-      <li class="session-item">
+      <li class="session-item" data-kind="fysisk" data-id="${p.id}">
         <div class="session-item-main">
           <div class="session-program">Fysisk: ${p.type}</div>
           <div class="session-meta">${p.duration_minutes ? p.duration_minutes + ' min' : ''}${p.comment ? ' · ' + p.comment : ''}</div>
@@ -1003,7 +1129,7 @@ function selectCalendarDay(dateKey, el) {
   });
   dayMental.forEach(m => {
     html += `
-      <li class="session-item">
+      <li class="session-item" data-kind="mentalt" data-id="${m.id}">
         <div class="session-item-main">
           <div class="session-program">Mentalt: ${m.type}</div>
           <div class="session-meta">${m.duration_minutes ? m.duration_minutes + ' min' : ''}${m.comment ? ' · ' + m.comment : ''}</div>
@@ -1013,8 +1139,14 @@ function selectCalendarDay(dateKey, el) {
   });
 
   dayList.innerHTML = html;
-  dayList.querySelectorAll('.session-item[data-id]').forEach(item => {
-    item.addEventListener('click', () => openDetail(item.dataset.id));
+  dayList.querySelectorAll('.session-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const kind = item.dataset.kind;
+      const id = item.dataset.id;
+      if (kind === 'skyting') openDetail(id);
+      else if (kind === 'fysisk') openPhysicalDetail(dayPhysical.find(p => p.id === id));
+      else if (kind === 'mentalt') openMentalDetail(dayMental.find(m => m.id === id));
+    });
   });
 }
 
@@ -1059,7 +1191,9 @@ function loadGoalsIntoForm(season) {
     document.getElementById(`${prefix}-line2`).value = existing?.line2 || '';
     document.getElementById(`${prefix}-line3`).value = existing?.line3 || '';
     document.getElementById(`${prefix}-comment`).value = existing?.comment || '';
-    document.getElementById(`${prefix}-achieved`).checked = !!existing?.achieved;
+    document.getElementById(`${prefix}-achieved1`).checked = !!existing?.achieved1;
+    document.getElementById(`${prefix}-achieved2`).checked = !!existing?.achieved2;
+    document.getElementById(`${prefix}-achieved3`).checked = !!existing?.achieved3;
   });
 }
 
@@ -1084,7 +1218,9 @@ document.getElementById('save-goals').addEventListener('click', async () => {
         line2: document.getElementById(`${prefix}-line2`).value,
         line3: document.getElementById(`${prefix}-line3`).value,
         comment: document.getElementById(`${prefix}-comment`).value,
-        achieved: document.getElementById(`${prefix}-achieved`).checked
+        achieved1: document.getElementById(`${prefix}-achieved1`).checked,
+        achieved2: document.getElementById(`${prefix}-achieved2`).checked,
+        achieved3: document.getElementById(`${prefix}-achieved3`).checked
       });
     }
     await refreshList();
@@ -1093,6 +1229,13 @@ document.getElementById('save-goals').addEventListener('click', async () => {
     alert('Kunne ikke lagre målsetninger. Sjekk nettforbindelsen og prøv igjen.');
   }
 });
+
+// ---- History (Tidligere økter) ----
+document.getElementById('nav-history').addEventListener('click', () => {
+  renderHistoryList();
+  showView(viewHistory);
+});
+document.getElementById('back-history').addEventListener('click', () => showView(viewList));
 
 // ---- Init ----
 async function initAuth() {
