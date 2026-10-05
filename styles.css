@@ -448,6 +448,10 @@ body {
   display: block;
 }
 
+.stats-chart[hidden] {
+  display: none;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -588,6 +592,7 @@ body {
 .dot-competition { background: var(--danger); }
 .dot-physical { background: var(--olive); }
 .dot-mental { background: #7A93B0; }
+.dot-dryfire { background: #9B6B9E; }
 
 .calendar-weekdays {
   display: grid;

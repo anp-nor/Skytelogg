@@ -61,6 +61,7 @@
     <button class="add-menu-btn" id="add-menu-shooting">Skyting</button>
     <button class="add-menu-btn" id="add-menu-physical">Fysisk</button>
     <button class="add-menu-btn" id="add-menu-mental">Mentalt</button>
+    <button class="add-menu-btn" id="add-menu-dryfire">Tørrtrening</button>
     <button class="text-btn" id="add-menu-cancel">Avbryt</button>
   </div>
 </div>
@@ -88,7 +89,6 @@
     <select id="input-category" class="field-input">
       <option value="Trening">Trening</option>
       <option value="Konkurranse">Konkurranse</option>
-      <option value="Tørrtrening">Tørrtrening</option>
     </select>
   </div>
 
@@ -106,8 +106,13 @@
       <option value="Omgang">Omgang</option>
       <option value="Grunnlag">Grunnlag</option>
       <option value="Plott">Plott</option>
-      <option value="Tørrtrening">Tørrtrening</option>
+      <option value="Annet">Annet</option>
     </select>
+  </div>
+
+  <div class="form-block">
+    <label class="field-label" for="input-total-shots">Antall skudd totalt (inkl. prøveskudd)</label>
+    <input type="number" id="input-total-shots" class="field-input" placeholder="f.eks. 40">
   </div>
 
   <div class="form-block">
@@ -211,7 +216,6 @@
       <option value="">Alle typer</option>
       <option value="Trening">Trening</option>
       <option value="Konkurranse">Konkurranse</option>
-      <option value="Tørrtrening">Tørrtrening</option>
     </select>
     <select id="filter-type" class="field-input">
       <option value="">Alle øvelser</option>
@@ -226,6 +230,7 @@
       <option value="Omgang">Omgang</option>
       <option value="Grunnlag">Grunnlag</option>
       <option value="Plott">Plott</option>
+      <option value="Annet">Annet</option>
       <option value="Tørrtrening">Tørrtrening</option>
     </select>
   </div>
@@ -327,6 +332,51 @@
   <button id="delete-mental" class="delete-full-btn" hidden>Slett</button>
 </main>
 
+<!-- Dryfire training add view -->
+<main id="view-dryfire-add" class="view" hidden>
+  <header class="subbar">
+    <button class="text-btn" id="cancel-dryfire">Avbryt</button>
+    <div class="subbar-title" id="dryfire-title">Tørrtrening</div>
+    <button class="text-btn text-btn-primary" id="save-dryfire">Lagre</button>
+  </header>
+
+  <div class="form-block">
+    <label class="field-label" for="dryfire-season">Sesong</label>
+    <select id="dryfire-season" class="field-input"></select>
+  </div>
+
+  <div class="form-block">
+    <label class="field-label" for="dryfire-date">Dato</label>
+    <input type="date" id="dryfire-date" class="field-input">
+  </div>
+
+  <div class="form-block">
+    <label class="field-label" for="dryfire-type">Type</label>
+    <select id="dryfire-type" class="field-input">
+      <option value="Simulator">Simulator</option>
+      <option value="Holdetrening">Holdetrening</option>
+      <option value="Papirblink">Papirblink</option>
+    </select>
+  </div>
+
+  <div class="form-block">
+    <label class="field-label" for="dryfire-duration">Tid (minutter)</label>
+    <input type="number" id="dryfire-duration" class="field-input" placeholder="20">
+  </div>
+
+  <div class="form-block">
+    <label class="field-label" for="dryfire-shots">Antall tørrtreningsskudd</label>
+    <input type="number" id="dryfire-shots" class="field-input" placeholder="f.eks. 50">
+  </div>
+
+  <div class="form-block">
+    <label class="field-label" for="dryfire-comment">Kommentar</label>
+    <input type="text" id="dryfire-comment" class="field-input" placeholder="Notater...">
+  </div>
+
+  <button id="delete-dryfire" class="delete-full-btn" hidden>Slett</button>
+</main>
+
 <!-- Calendar view -->
 <main id="view-calendar" class="view" hidden>
   <header class="subbar">
@@ -346,6 +396,7 @@
     <span class="legend-item"><span class="legend-dot dot-competition"></span>Konkurranse</span>
     <span class="legend-item"><span class="legend-dot dot-physical"></span>Fysisk</span>
     <span class="legend-item"><span class="legend-dot dot-mental"></span>Mentalt</span>
+    <span class="legend-item"><span class="legend-dot dot-dryfire"></span>Tørrtrening</span>
   </div>
 
   <div class="calendar-weekdays">

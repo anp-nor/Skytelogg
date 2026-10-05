@@ -70,7 +70,8 @@ function rowToSession(row) {
     trainingType: row.training_type,
     notes: row.notes,
     shots: row.shots || [],
-    images: row.images || []
+    images: row.images || [],
+    totalShotsFired: row.total_shots_fired
   };
 }
 
@@ -82,7 +83,8 @@ function sessionToRow(session) {
     training_type: session.trainingType,
     notes: session.notes,
     shots: session.shots,
-    images: session.images
+    images: session.images,
+    total_shots_fired: session.totalShotsFired
   };
 }
 
@@ -158,6 +160,29 @@ async function deleteMentalSession(id) {
   if (error) throw error;
 }
 
+// ---- Dryfire training CRUD ----
+async function fetchDryfireSessions() {
+  const { data, error } = await supabase.from('dryfire_sessions').select('*').order('date', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
+async function insertDryfireSession(entry) {
+  const row = { ...entry, user_id: currentUser.id };
+  const { error } = await supabase.from('dryfire_sessions').insert(row);
+  if (error) throw error;
+}
+
+async function updateDryfireSession(id, entry) {
+  const { error } = await supabase.from('dryfire_sessions').update(entry).eq('id', id);
+  if (error) throw error;
+}
+
+async function deleteDryfireSession(id) {
+  const { error } = await supabase.from('dryfire_sessions').delete().eq('id', id);
+  if (error) throw error;
+}
+
 // ---- Goals CRUD ----
 async function fetchGoals() {
   const { data, error } = await supabase.from('goals').select('*');
@@ -175,6 +200,7 @@ async function upsertGoal(goal) {
 let sessions = [];
 let physicalSessions = [];
 let mentalSessions = [];
+let dryfireSessions = [];
 let goalsData = [];
 let draftShots = [];
 let draftImages = [];
@@ -182,6 +208,7 @@ let currentDetailId = null;
 let editingId = null;
 let editingPhysicalId = null;
 let editingMentalId = null;
+let editingDryfireId = null;
 let isDecimalMode = false;
 let isPlottMode = false;
 
@@ -209,11 +236,12 @@ const viewDetail = document.getElementById('view-detail');
 const viewStats = document.getElementById('view-stats');
 const viewPhysicalAdd = document.getElementById('view-physical-add');
 const viewMentalAdd = document.getElementById('view-mental-add');
+const viewDryfireAdd = document.getElementById('view-dryfire-add');
 const viewCalendar = document.getElementById('view-calendar');
 const viewGoals = document.getElementById('view-goals');
 const viewHistory = document.getElementById('view-history');
 const bottomNav = document.getElementById('bottom-nav');
-const allViews = [viewList, viewAdd, viewDetail, viewStats, viewPhysicalAdd, viewMentalAdd, viewCalendar, viewGoals, viewHistory];
+const allViews = [viewList, viewAdd, viewDetail, viewStats, viewPhysicalAdd, viewMentalAdd, viewDryfireAdd, viewCalendar, viewGoals, viewHistory];
 
 function showView(view) {
   allViews.forEach(v => v.hidden = true);
@@ -238,11 +266,14 @@ function renderStats() {
   const totalGoalSlots = goalsData.length * 3;
   const achievedGoalSlots = goalsData.reduce((sum, g) =>
     sum + (g.achieved1 ? 1 : 0) + (g.achieved2 ? 1 : 0) + (g.achieved3 ? 1 : 0), 0);
+  const totalShotsFired = sessions.reduce((sum, s) => sum + (Number(s.totalShotsFired) || 0), 0);
 
   statsRow.innerHTML = `
     <div class="stat"><div class="stat-value">${sessions.length}</div><div class="stat-label">skyting</div></div>
     <div class="stat"><div class="stat-value">${physicalSessions.length}</div><div class="stat-label">fysisk</div></div>
     <div class="stat"><div class="stat-value">${mentalSessions.length}</div><div class="stat-label">mentalt</div></div>
+    <div class="stat"><div class="stat-value">${dryfireSessions.length}</div><div class="stat-label">tørrtrening</div></div>
+    <div class="stat"><div class="stat-value">${totalShotsFired}</div><div class="stat-label">skudd totalt</div></div>
     <div class="stat"><div class="stat-value">${achievedGoalSlots}/${totalGoalSlots}</div><div class="stat-label">mål oppnådd</div></div>
   `;
 }
@@ -300,6 +331,11 @@ function buildHistoryItems() {
     meta: `${m.duration_minutes ? m.duration_minutes + ' min' : ''}${m.comment ? ' · ' + m.comment : ''}`,
     score: null, data: m
   }));
+  dryfireSessions.forEach(d => items.push({
+    kind: 'tørrtrening', date: d.date, title: `Tørrtrening: ${d.type}`,
+    meta: `${d.duration_minutes ? d.duration_minutes + ' min' : ''}${d.shot_count ? ' · ' + d.shot_count + ' skudd' : ''}${d.comment ? ' · ' + d.comment : ''}`,
+    score: null, data: d
+  }));
   items.sort((a, b) => new Date(b.date) - new Date(a.date));
   return items;
 }
@@ -332,6 +368,7 @@ function renderHistoryList() {
       if (item.kind === 'skyting') openDetail(item.data.id);
       else if (item.kind === 'fysisk') openPhysicalDetail(item.data);
       else if (item.kind === 'mentalt') openMentalDetail(item.data);
+      else if (item.kind === 'tørrtrening') openDryfireDetail(item.data);
     });
   });
 }
@@ -395,6 +432,11 @@ async function refreshList() {
     console.error('Kunne ikke hente fysisk trening', err);
   }
   try {
+    dryfireSessions = await fetchDryfireSessions();
+  } catch (err) {
+    console.error('Kunne ikke hente tørrtrening', err);
+  }
+  try {
     mentalSessions = await fetchMentalSessions();
   } catch (err) {
     console.error('Kunne ikke hente mental trening', err);
@@ -416,6 +458,7 @@ function resetAddForm() {
   document.getElementById('input-date').valueAsDate = new Date();
   document.getElementById('input-category').selectedIndex = 0;
   document.getElementById('input-type').selectedIndex = 0;
+  document.getElementById('input-total-shots').value = '';
   document.getElementById('input-notes').value = '';
   document.getElementById('shot-position').selectedIndex = 0;
   draftShots = [];
@@ -433,6 +476,7 @@ function openEditForm(session) {
   document.getElementById('input-date').value = session.date;
   document.getElementById('input-category').value = session.category || 'Trening';
   if (session.trainingType) document.getElementById('input-type').value = session.trainingType;
+  document.getElementById('input-total-shots').value = session.totalShotsFired || '';
   document.getElementById('input-notes').value = session.notes || '';
   draftShots = session.shots.map(s => ({ ...s }));
   draftImages = (session.images || []).slice();
@@ -577,6 +621,12 @@ document.getElementById('add-menu-mental').addEventListener('click', () => {
   showView(viewMentalAdd);
 });
 
+document.getElementById('add-menu-dryfire').addEventListener('click', () => {
+  document.getElementById('add-menu').hidden = true;
+  resetDryfireForm();
+  showView(viewDryfireAdd);
+});
+
 document.getElementById('cancel-add').addEventListener('click', () => {
   editingId = null;
   showView(viewList);
@@ -679,6 +729,8 @@ document.getElementById('save-session').addEventListener('click', async () => {
   const season = document.getElementById('input-season').value;
   const category = document.getElementById('input-category').value;
   const trainingType = document.getElementById('input-type').value;
+  const totalShotsVal = document.getElementById('input-total-shots').value;
+  const totalShotsFired = totalShotsVal ? Number(totalShotsVal) : null;
   const notes = document.getElementById('input-notes').value;
 
   const session = {
@@ -686,6 +738,7 @@ document.getElementById('save-session').addEventListener('click', async () => {
     season,
     category,
     trainingType,
+    totalShotsFired,
     notes,
     shots: draftShots,
     images: draftImages
@@ -728,6 +781,7 @@ async function openDetail(id) {
     ${session.category ? `<div class="detail-row"><span class="detail-row-label">Type</span><span class="detail-row-value">${session.category}</span></div>` : ''}
     ${session.trainingType ? `<div class="detail-row"><span class="detail-row-label">Øvelse</span><span class="detail-row-value">${session.trainingType}</span></div>` : ''}
     ${session.trainingType !== 'Plott' ? `<div class="detail-row"><span class="detail-row-label">Totalt poeng</span><span class="detail-row-value">${formatScore(scoreTotal(session), session.trainingType === '60 ligg ISSF')}</span></div>` : ''}
+    ${session.totalShotsFired ? `<div class="detail-row"><span class="detail-row-label">Antall skudd totalt</span><span class="detail-row-value">${session.totalShotsFired}</span></div>` : ''}
     ${session.notes ? `<div class="detail-row"><span class="detail-row-label">Notater</span><span class="detail-row-value">${escapeHtml(session.notes)}</span></div>` : ''}
     <div class="detail-shots-title">Skudd (${session.shots.length})</div>
     <ul class="shot-list">
@@ -1035,6 +1089,76 @@ document.getElementById('delete-mental').addEventListener('click', async () => {
   }
 });
 
+// ---- Dryfire training form ----
+function resetDryfireForm() {
+  editingDryfireId = null;
+  document.getElementById('dryfire-title').textContent = 'Tørrtrening';
+  document.getElementById('delete-dryfire').hidden = true;
+  populateSeasonSelect(document.getElementById('dryfire-season'));
+  document.getElementById('dryfire-date').valueAsDate = new Date();
+  document.getElementById('dryfire-type').selectedIndex = 0;
+  document.getElementById('dryfire-duration').value = '';
+  document.getElementById('dryfire-shots').value = '';
+  document.getElementById('dryfire-comment').value = '';
+}
+
+function openDryfireDetail(entry) {
+  editingDryfireId = entry.id;
+  document.getElementById('dryfire-title').textContent = 'Rediger tørrtrening';
+  document.getElementById('delete-dryfire').hidden = false;
+  populateSeasonSelect(document.getElementById('dryfire-season'));
+  if (entry.season) document.getElementById('dryfire-season').value = entry.season;
+  document.getElementById('dryfire-date').value = entry.date;
+  document.getElementById('dryfire-type').value = entry.type;
+  document.getElementById('dryfire-duration').value = entry.duration_minutes || '';
+  document.getElementById('dryfire-shots').value = entry.shot_count || '';
+  document.getElementById('dryfire-comment').value = entry.comment || '';
+  showView(viewDryfireAdd);
+}
+
+document.getElementById('cancel-dryfire').addEventListener('click', () => {
+  showView(editingDryfireId != null ? viewHistory : viewList);
+});
+
+document.getElementById('save-dryfire').addEventListener('click', async () => {
+  const date = document.getElementById('dryfire-date').value || new Date().toISOString().slice(0, 10);
+  const season = document.getElementById('dryfire-season').value;
+  const type = document.getElementById('dryfire-type').value;
+  const durationVal = document.getElementById('dryfire-duration').value;
+  const duration_minutes = durationVal ? Number(durationVal) : null;
+  const shotsVal = document.getElementById('dryfire-shots').value;
+  const shot_count = shotsVal ? Number(shotsVal) : null;
+  const comment = document.getElementById('dryfire-comment').value;
+  try {
+    if (editingDryfireId != null) {
+      await updateDryfireSession(editingDryfireId, { date, season, type, duration_minutes, shot_count, comment });
+      editingDryfireId = null;
+      await refreshList();
+      renderHistoryList();
+      showView(viewHistory);
+    } else {
+      await insertDryfireSession({ date, season, type, duration_minutes, shot_count, comment });
+      await refreshList();
+      showView(viewList);
+    }
+  } catch (err) {
+    alert('Kunne ikke lagre. Sjekk nettforbindelsen og prøv igjen.');
+  }
+});
+
+document.getElementById('delete-dryfire').addEventListener('click', async () => {
+  if (editingDryfireId == null) return;
+  try {
+    await deleteDryfireSession(editingDryfireId);
+    editingDryfireId = null;
+    await refreshList();
+    renderHistoryList();
+    showView(viewHistory);
+  } catch (err) {
+    alert('Kunne ikke slette. Sjekk nettforbindelsen og prøv igjen.');
+  }
+});
+
 // ---- Calendar ----
 let calCurrentMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 
@@ -1066,11 +1190,13 @@ function renderCalendar() {
     const hasCompetition = sessions.some(s => s.date === key && s.category === 'Konkurranse');
     const hasPhysical = physicalSessions.some(p => p.date === key);
     const hasMental = mentalSessions.some(m => m.date === key);
+    const hasDryfire = dryfireSessions.some(d => d.date === key);
     const dots = [
       hasShooting ? '<span class="dot-shooting"></span>' : '',
       hasCompetition ? '<span class="dot-competition"></span>' : '',
       hasPhysical ? '<span class="dot-physical"></span>' : '',
-      hasMental ? '<span class="dot-mental"></span>' : ''
+      hasMental ? '<span class="dot-mental"></span>' : '',
+      hasDryfire ? '<span class="dot-dryfire"></span>' : ''
     ].join('');
     html += `
       <div class="calendar-day" data-date="${key}">
@@ -1099,8 +1225,9 @@ function selectCalendarDay(dateKey, el) {
   const daySessions = sessions.filter(s => s.date === dateKey);
   const dayPhysical = physicalSessions.filter(p => p.date === dateKey);
   const dayMental = mentalSessions.filter(m => m.date === dateKey);
+  const dayDryfire = dryfireSessions.filter(d => d.date === dateKey);
 
-  if (daySessions.length === 0 && dayPhysical.length === 0 && dayMental.length === 0) {
+  if (daySessions.length === 0 && dayPhysical.length === 0 && dayMental.length === 0 && dayDryfire.length === 0) {
     dayList.innerHTML = '<li class="type-stats-item">Ingen aktiviteter denne dagen.</li>';
     return;
   }
@@ -1137,6 +1264,16 @@ function selectCalendarDay(dateKey, el) {
       </li>
     `;
   });
+  dayDryfire.forEach(d => {
+    html += `
+      <li class="session-item" data-kind="tørrtrening" data-id="${d.id}">
+        <div class="session-item-main">
+          <div class="session-program">Tørrtrening: ${d.type}</div>
+          <div class="session-meta">${d.duration_minutes ? d.duration_minutes + ' min' : ''}${d.shot_count ? ' · ' + d.shot_count + ' skudd' : ''}${d.comment ? ' · ' + d.comment : ''}</div>
+        </div>
+      </li>
+    `;
+  });
 
   dayList.innerHTML = html;
   dayList.querySelectorAll('.session-item').forEach(item => {
@@ -1146,6 +1283,7 @@ function selectCalendarDay(dateKey, el) {
       if (kind === 'skyting') openDetail(id);
       else if (kind === 'fysisk') openPhysicalDetail(dayPhysical.find(p => p.id === id));
       else if (kind === 'mentalt') openMentalDetail(dayMental.find(m => m.id === id));
+      else if (kind === 'tørrtrening') openDryfireDetail(dayDryfire.find(d => d.id === id));
     });
   });
 }
