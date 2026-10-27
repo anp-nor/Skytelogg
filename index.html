@@ -42,6 +42,16 @@
 </header>
 
 <main id="view-list" class="view">
+  <div class="profile-card">
+    <div class="profile-field">
+      <label class="field-label" for="profile-name">Navn</label>
+      <input type="text" id="profile-name" class="field-input" placeholder="Fornavn Etternavn" autocomplete="name">
+    </div>
+    <div class="profile-field">
+      <label class="field-label" for="profile-klasse">Klasse</label>
+      <select id="profile-klasse" class="field-input"></select>
+    </div>
+  </div>
   <div class="stats-row" id="stats-row"></div>
   <div class="section-label">Per øvelse</div>
   <ul id="type-stats-list" class="type-stats-list"></ul>
@@ -110,6 +120,17 @@
     </select>
   </div>
 
+  <div class="form-block" id="stilling-block" hidden>
+    <label class="field-label" for="input-stilling">Stilling</label>
+    <select id="input-stilling" class="field-input">
+      <option value="Liggende">Liggende</option>
+      <option value="Knestående">Knestående</option>
+      <option value="Stående">Stående</option>
+    </select>
+  </div>
+
+  <div class="form-block" id="klasse-info" hidden></div>
+
   <div class="form-block">
     <label class="field-label" for="input-total-shots">Antall skudd totalt (inkl. prøveskudd)</label>
     <input type="number" id="input-total-shots" class="field-input" placeholder="f.eks. 40">
@@ -129,25 +150,14 @@
 
   <div class="section-divider"></div>
 
+  <div id="shot-summary" class="shot-summary"></div>
   <div class="section-label">Legg til skudd</div>
+  <div id="shot-next" class="shot-next"></div>
   <div id="shot-entry-normal">
     <div class="shot-entry">
-      <select id="shot-position" class="field-input shot-position">
-        <option value="Liggende">Liggende</option>
-        <option value="Knestående">Knestående</option>
-        <option value="Stående">Stående</option>
-      </select>
-      <div class="score-stepper">
-        <button id="score-down" class="stepper-btn" aria-label="Reduser poeng">–</button>
-        <div id="score-value" class="score-value">10</div>
-        <button id="score-up" class="stepper-btn" aria-label="Øk poeng">+</button>
-      </div>
+      <input type="text" id="shot-score" class="field-input score-input" inputmode="decimal" placeholder="Poeng, f.eks. 10,5" autocomplete="off">
       <button id="add-shot" class="add-shot-btn">Legg til</button>
     </div>
-    <label class="center-ten-label">
-      <input type="checkbox" id="shot-center-ten">
-      Sentrumstier
-    </label>
   </div>
 
   <div id="shot-entry-plott" class="plott-entry" hidden>

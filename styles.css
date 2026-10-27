@@ -797,3 +797,39 @@ body {
   max-height: 92vh;
   object-fit: contain;
 }
+
+/* ---- Trinn 1: profil, sammendrag, poengfelt ---- */
+.profile-card {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.profile-field { flex: 1; min-width: 0; }
+.profile-field .field-input { width: 100%; box-sizing: border-box; }
+
+.shot-summary {
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--brass);
+  background: var(--bg-raised);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 16px 0 0;
+}
+.shot-summary:empty { display: none; }
+.shot-next {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin: 0 0 8px;
+}
+.score-input { flex: 1; min-width: 0; font-family: var(--mono); }
+.klasse-note { font-size: 13px; color: var(--text-dim); }
+.shot-series-head {
+  font-size: 12px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  list-style: none;
+  margin: 14px 0 4px;
+}

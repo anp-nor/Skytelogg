@@ -71,7 +71,8 @@ function rowToSession(row) {
     notes: row.notes,
     shots: row.shots || [],
     images: row.images || [],
-    totalShotsFired: row.total_shots_fired
+    totalShotsFired: row.total_shots_fired,
+    klasse: row.klasse || null
   };
 }
 
@@ -84,7 +85,8 @@ function sessionToRow(session) {
     notes: session.notes,
     shots: session.shots,
     images: session.images,
-    total_shots_fired: session.totalShotsFired
+    total_shots_fired: session.totalShotsFired,
+    klasse: session.klasse || null
   };
 }
 
@@ -212,9 +214,76 @@ let editingDryfireId = null;
 let isDecimalMode = false;
 let isPlottMode = false;
 
+// ---- Klasser, programmer og poengregler ----
+const KLASSER = ['EJ', '3', '4', '5', 'J', '2', 'V55', 'SK2', 'NU', 'R', 'ER', '1', 'SK1', 'V65', 'V75'];
+const KLASSE_GRUPPE = {
+  'EJ': 'stå', '3': 'stå', '4': 'stå', '5': 'stå',
+  'J': 'kne', '2': 'kne', 'V55': 'kne', 'SK2': 'kne',
+  'NU': 'ligg', 'R': 'ligg', 'ER': 'ligg', '1': 'ligg', 'SK1': 'ligg', 'V65': 'ligg', 'V75': 'ligg'
+};
+const POS_L = 'Liggende', POS_K = 'Knestående', POS_S = 'Stående';
+const POS_SHORT = { 'Liggende': 'ligg', 'Knestående': 'kne', 'Stående': 'stå' };
+const rep = (p, n) => Array(n).fill(p);
+
+// Returnerer [{position, serie}, ...] for ett skudd per element, eller null (manuell stilling).
+function programFlat(type, klasse) {
+  const g = KLASSE_GRUPPE[klasse] || null;
+  const L = POS_L, K = POS_K, S = POS_S;
+  let series = null;
+  const matchN = { 'Hel-match': 40, 'Halv-match': 20, 'Kvart-match': 10 }[type];
+
+  if (type === '25 ligg') series = rep(rep(L, 5), 5);
+  else if (type === '25 kne') series = rep(rep(K, 5), 5);
+  else if (type === '15 stå') series = rep(rep(S, 5), 3);
+  else if (type === '60 ligg ISSF') series = rep(rep(L, 10), 6);
+  else if (type === 'Omgang') series = [rep(L, 10)];
+  else if (!g) series = null;
+  else if (type === '35-skuddsprogram') {
+    if (g === 'stå') series = [rep(L, 5), rep(S, 5), rep(K, 5), [...rep(S, 3), ...rep(K, 3), ...rep(L, 4)], rep(L, 10)];
+    else if (g === 'kne') series = [rep(L, 5), rep(K, 5), rep(L, 5), [...rep(K, 6), ...rep(L, 4)], rep(L, 10)];
+    else series = [rep(L, 5), rep(L, 5), rep(L, 5), rep(L, 10), rep(L, 10)];
+  } else if (matchN) {
+    if (g === 'stå') series = [rep(K, matchN), rep(S, matchN), rep(L, matchN)];
+    else if (g === 'kne') series = [rep(L, matchN), rep(K, matchN), rep(L, matchN)];
+    else series = [rep(L, matchN), rep(L, matchN), rep(L, matchN)];
+  } else if (type === 'Grunnlag') {
+    if (g === 'stå') series = [[...rep(S, 3), ...rep(K, 3), ...rep(L, 4)]];
+    else if (g === 'kne') series = [[...rep(K, 6), ...rep(L, 4)]];
+    else series = [rep(L, 10)];
+  }
+  if (!series) return null;
+  const flat = [];
+  series.forEach((positions, i) => positions.forEach(p => flat.push({ position: p, serie: i + 1 })));
+  return flat;
+}
+
 function formatScore(score, decimal) {
   return decimal ? Number(score).toFixed(1) : String(score);
 }
+
+// Enkeltskudd vises med desimal hvis det har det (10.5), ellers som heltall
+function formatShotScore(score) {
+  const n = Number(score);
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+// Poeng som teller i summer: heltall (nedrundet), unntatt 60 ligg ISSF som har desimaler
+function shotPoints(shot, decimal) {
+  const n = Number(shot.score) || 0;
+  return decimal ? n : Math.floor(n + 1e-9);
+}
+function sumShots(shots, decimal) {
+  const sum = shots.reduce((t, s) => t + shotPoints(s, decimal), 0);
+  return decimal ? Math.round(sum * 10) / 10 : sum;
+}
+function isCenterTen(shot) {
+  return shot.centerTen === true || Number(shot.score) >= 10.5;
+}
+function countCenterTens(shots) {
+  return shots.filter(isCenterTen).length;
+}
+function plottActual(shot) { return Math.floor((Number(shot.actualScore) || 0) + 1e-9); }
+function plottExpected(shot) { return Math.floor((Number(shot.expectedScore) || 0) + 1e-9); }
 
 function buildShotGroups(shotsArray) {
   const groups = [];
@@ -227,6 +296,62 @@ function buildShotGroups(shotsArray) {
     }
   });
   return groups;
+}
+
+// Grupper etter serie (nye økter) eller etter stilling (eldre økter / Annet)
+function groupShots(shots) {
+  const bySerie = shots.length > 0 && shots.every(s => s.serie != null);
+  if (!bySerie) return buildShotGroups(shots);
+  const groups = [];
+  shots.forEach((shot, index) => {
+    const last = groups[groups.length - 1];
+    if (last && last.serie === shot.serie) last.items.push({ shot, index });
+    else groups.push({ serie: shot.serie, items: [{ shot, index }] });
+  });
+  return groups;
+}
+
+function describePositions(items) {
+  const runs = [];
+  items.forEach(({ shot }) => {
+    const last = runs[runs.length - 1];
+    if (last && last.position === shot.position) last.n++;
+    else runs.push({ position: shot.position, n: 1 });
+  });
+  if (runs.length === 1) return String(runs[0].position || '').toLowerCase();
+  return runs.map(r => `${r.n} ${POS_SHORT[r.position] || r.position}`).join(', ');
+}
+
+function shotListHtml(shots, decimal, editable) {
+  const groups = groupShots(shots);
+  let html = '';
+  groups.forEach(group => {
+    const isSerie = group.serie != null;
+    if (isSerie) {
+      html += `<li class="shot-series-head">Serie ${group.serie} · ${describePositions(group.items)}</li>`;
+    }
+    html += group.items.map(({ shot, index }) => `
+      <li class="shot-item">
+        <span>${index + 1}. ${shot.position || ''}</span>
+        <span class="shot-item-right">
+          <span class="shot-item-score">${decimal ? formatScore(shot.score, true) : formatShotScore(shot.score)}</span>
+          ${isCenterTen(shot) ? '<span class="center-ten-badge">S</span>' : ''}
+          ${editable ? `
+          <button class="shot-move" data-dir="up" data-index="${index}" ${index === 0 ? 'disabled' : ''} aria-label="Flytt opp">↑</button>
+          <button class="shot-move" data-dir="down" data-index="${index}" ${index === shots.length - 1 ? 'disabled' : ''} aria-label="Flytt ned">↓</button>
+          <button class="shot-remove" data-index="${index}" aria-label="Fjern skudd">×</button>` : ''}
+        </span>
+      </li>
+    `).join('');
+    const subtotal = sumShots(group.items.map(i => i.shot), decimal);
+    const cx = countCenterTens(group.items.map(i => i.shot));
+    const label = isSerie ? `serie ${group.serie}` : String(group.position || '').toLowerCase();
+    html += `<li class="shot-subtotal">Sum ${label}: ${formatScore(subtotal, decimal)} · Sentrumstiere: ${cx}</li>`;
+  });
+  if (shots.length > 0) {
+    html += `<li class="shot-total">Totalt: ${formatScore(sumShots(shots, decimal), decimal)} · Sentrumstiere totalt: ${countCenterTens(shots)}</li>`;
+  }
+  return html;
 }
 
 // ---- View elements ----
@@ -252,9 +377,9 @@ function showView(view) {
 // ---- Rendering: list view ----
 function scoreTotal(session) {
   if (session.trainingType === 'Plott') {
-    return session.shots.reduce((sum, s) => sum + Number(s.actualScore || 0), 0);
+    return session.shots.reduce((sum, s) => sum + plottActual(s), 0);
   }
-  return session.shots.reduce((sum, s) => sum + Number(s.score || 0), 0);
+  return sumShots(session.shots, session.trainingType === '60 ligg ISSF');
 }
 
 function sessionTitle(session) {
@@ -379,29 +504,7 @@ function formatDate(iso) {
 }
 
 function renderDetailShotGroups(session) {
-  const decimal = session.trainingType === '60 ligg ISSF';
-  const groups = buildShotGroups(session.shots);
-  let html = '';
-  groups.forEach(group => {
-    html += group.items.map(({ shot, index }) => `
-      <li class="shot-item">
-        <span>${index + 1}. ${shot.position}</span>
-        <span class="shot-item-right">
-          <span class="shot-item-score">${formatScore(shot.score, decimal)}</span>
-          ${shot.centerTen ? '<span class="center-ten-badge">S</span>' : ''}
-        </span>
-      </li>
-    `).join('');
-    const subtotal = group.items.reduce((sum, { shot }) => sum + Number(shot.score), 0);
-    const centerTenCount = group.items.filter(({ shot }) => shot.centerTen).length;
-    html += `<li class="shot-subtotal">Sum ${group.position.toLowerCase()}: ${formatScore(subtotal, decimal)} · Sentrumstiere: ${centerTenCount}</li>`;
-  });
-  if (session.shots.length > 0) {
-    const total = session.shots.reduce((sum, s) => sum + Number(s.score), 0);
-    const totalCenterTen = session.shots.filter(s => s.centerTen).length;
-    html += `<li class="shot-total">Totalt: ${formatScore(total, decimal)} · Sentrumstiere totalt: ${totalCenterTen}</li>`;
-  }
-  return html;
+  return shotListHtml(session.shots, session.trainingType === '60 ligg ISSF', false);
 }
 
 function renderDetailPlott(session) {
@@ -411,8 +514,8 @@ function renderDetailPlott(session) {
     </li>
   `).join('');
   if (session.shots.length > 0) {
-    const sumExpected = session.shots.reduce((sum, s) => sum + Number(s.expectedScore), 0);
-    const sumActual = session.shots.reduce((sum, s) => sum + Number(s.actualScore), 0);
+    const sumExpected = session.shots.reduce((sum, s) => sum + plottExpected(s), 0);
+    const sumActual = session.shots.reduce((sum, s) => sum + plottActual(s), 0);
     html += `<li class="shot-subtotal">Sum forventet: ${sumExpected}</li>`;
     html += `<li class="shot-total">Sum faktisk: ${sumActual}</li>`;
   }
@@ -450,20 +553,74 @@ async function refreshList() {
   renderTypeStats();
 }
 
+// ---- Profil (navn og klasse) ----
+let profile = { name: '', klasse: '' };
+let draftKlasse = '';
+let draftFlat = null;
+let draftLegacy = false;
+
+function profileKey() {
+  return 'skytelogg_profile_' + (currentUser ? currentUser.id : 'anon');
+}
+
+async function loadProfile() {
+  try {
+    const local = JSON.parse(localStorage.getItem(profileKey()) || 'null');
+    if (local) profile = { name: local.name || '', klasse: local.klasse || '' };
+  } catch (e) { /* ignorer */ }
+  try {
+    const { data } = await supabase.from('profiles').select('name, klasse').eq('id', currentUser.id).maybeSingle();
+    if (data && (data.name || data.klasse)) {
+      profile = { name: data.name || '', klasse: data.klasse || '' };
+      try { localStorage.setItem(profileKey(), JSON.stringify(profile)); } catch (e) { /* ignorer */ }
+    }
+  } catch (e) { /* kolonnene finnes kanskje ikke ennå */ }
+  renderProfile();
+}
+
+function renderProfile() {
+  const sel = document.getElementById('profile-klasse');
+  if (!sel.options.length) {
+    sel.innerHTML = '<option value="">Velg klasse</option>' +
+      KLASSER.map(k => `<option value="${k}">${k}</option>`).join('');
+  }
+  sel.value = profile.klasse || '';
+  document.getElementById('profile-name').value = profile.name || '';
+}
+
+async function saveProfile() {
+  profile = {
+    name: document.getElementById('profile-name').value.trim(),
+    klasse: document.getElementById('profile-klasse').value
+  };
+  try { localStorage.setItem(profileKey(), JSON.stringify(profile)); } catch (e) { /* ignorer */ }
+  try {
+    await supabase.from('profiles').upsert(
+      { id: currentUser.id, email: currentUser.email, name: profile.name || null, klasse: profile.klasse || null },
+      { onConflict: 'id' }
+    );
+  } catch (e) { /* lokal kopi holder */ }
+}
+
+document.getElementById('profile-name').addEventListener('change', saveProfile);
+document.getElementById('profile-klasse').addEventListener('change', saveProfile);
+
 // ---- Add session flow ----
 function resetAddForm() {
   editingId = null;
+  draftLegacy = false;
+  draftKlasse = profile.klasse || '';
   document.getElementById('add-title').textContent = 'Ny økt';
   populateSeasonSelect(document.getElementById('input-season'));
   document.getElementById('input-date').valueAsDate = new Date();
   document.getElementById('input-category').selectedIndex = 0;
   document.getElementById('input-type').selectedIndex = 0;
+  document.getElementById('input-stilling').selectedIndex = 0;
   document.getElementById('input-total-shots').value = '';
   document.getElementById('input-notes').value = '';
-  document.getElementById('shot-position').selectedIndex = 0;
+  document.getElementById('shot-score').value = '';
   draftShots = [];
   draftImages = [];
-  renderDraftShots();
   renderDraftImages();
   updateFormModeUI();
 }
@@ -478,85 +635,113 @@ function openEditForm(session) {
   if (session.trainingType) document.getElementById('input-type').value = session.trainingType;
   document.getElementById('input-total-shots').value = session.totalShotsFired || '';
   document.getElementById('input-notes').value = session.notes || '';
+  document.getElementById('shot-score').value = '';
+  draftKlasse = session.klasse || '';
   draftShots = session.shots.map(s => ({ ...s }));
+  draftLegacy = session.trainingType !== 'Plott' && draftShots.length > 0 && !draftShots.every(s => s.serie != null);
+  const lastPos = draftShots.length ? draftShots[draftShots.length - 1].position : null;
+  document.getElementById('input-stilling').value = lastPos || POS_L;
   draftImages = (session.images || []).slice();
-  renderDraftShots();
   renderDraftImages();
   updateFormModeUI();
   showView(viewAdd);
 }
 
-let currentScore = 10;
-function setScoreValue(v) {
-  const max = isDecimalMode ? 10.9 : 10;
-  let val = Math.max(0, Math.min(max, v));
-  if (isDecimalMode) val = parseFloat(val.toFixed(1));
-  currentScore = val;
-  document.getElementById('score-value').textContent = isDecimalMode ? currentScore.toFixed(1) : String(currentScore);
+function applyLayoutToDraft() {
+  if (!draftFlat) return;
+  draftShots.forEach((s, i) => {
+    const f = draftFlat[Math.min(i, draftFlat.length - 1)];
+    s.position = f.position;
+    s.serie = f.serie;
+  });
 }
 
 function updateFormModeUI() {
   const typeVal = document.getElementById('input-type').value;
   isPlottMode = typeVal === 'Plott';
   isDecimalMode = typeVal === '60 ligg ISSF';
+  draftFlat = (isPlottMode || typeVal === 'Annet' || draftLegacy) ? null : programFlat(typeVal, draftKlasse);
+  const manual = !isPlottMode && !draftFlat;
+
   document.getElementById('shot-entry-normal').hidden = isPlottMode;
   document.getElementById('shot-entry-plott').hidden = !isPlottMode;
-  if (!isPlottMode) {
-    setScoreValue(isDecimalMode ? 10.0 : 10);
-  }
+  document.getElementById('stilling-block').hidden = !(isPlottMode || manual);
+
+  const info = document.getElementById('klasse-info');
+  let note = '';
+  if (draftFlat && draftKlasse) note = `Klasse ${draftKlasse} – serier og stillinger settes automatisk.`;
+  else if (draftFlat) note = 'Serier og stillinger settes automatisk.';
+  else if (!isPlottMode && typeVal !== 'Annet' && !draftLegacy && !draftKlasse) note = 'Velg klasse på forsiden for å få riktige serier og stillinger. Inntil da velger du stilling selv.';
+  else if (draftLegacy) note = 'Eldre økt – stilling velges manuelt for nye skudd.';
+  info.hidden = !note;
+  info.innerHTML = note ? `<span class="klasse-note">${note}</span>` : '';
+
+  applyLayoutToDraft();
   renderDraftShots();
 }
 
-function renderDraftShots() {
-  const list = document.getElementById('shot-list');
-  document.getElementById('shots-label').textContent = `Skudd (${draftShots.length})`;
-
+function renderShotSummary() {
+  const el = document.getElementById('shot-summary');
+  const n = draftShots.length;
+  if (n === 0) { el.textContent = ''; return; }
   if (isPlottMode) {
-    renderDraftPlottList(list);
+    el.textContent = `Faktisk ${draftShots.reduce((t, s) => t + plottActual(s), 0)} · ${n} skudd`;
     return;
   }
+  el.textContent = `Totalt ${formatScore(sumShots(draftShots, isDecimalMode), isDecimalMode)} · ${countCenterTens(draftShots)}x · ${n} skudd`;
+}
 
-  const groups = buildShotGroups(draftShots);
-  let html = '';
-  groups.forEach(group => {
-    html += group.items.map(({ shot, index }) => `
-      <li class="shot-item">
-        <span>${index + 1}. ${shot.position}</span>
-        <span class="shot-item-right">
-          <span class="shot-item-score">${formatScore(shot.score, isDecimalMode)}</span>
-          ${shot.centerTen ? '<span class="center-ten-badge">S</span>' : ''}
-          <button class="shot-move" data-dir="up" data-index="${index}" ${index === 0 ? 'disabled' : ''} aria-label="Flytt opp">↑</button>
-          <button class="shot-move" data-dir="down" data-index="${index}" ${index === draftShots.length - 1 ? 'disabled' : ''} aria-label="Flytt ned">↓</button>
-          <button class="shot-remove" data-index="${index}" aria-label="Fjern skudd">×</button>
-        </span>
-      </li>
-    `).join('');
-    const subtotal = group.items.reduce((sum, { shot }) => sum + Number(shot.score), 0);
-    const centerTenCount = group.items.filter(({ shot }) => shot.centerTen).length;
-    html += `<li class="shot-subtotal">Sum ${group.position.toLowerCase()}: ${formatScore(subtotal, isDecimalMode)} · Sentrumstiere: ${centerTenCount}</li>`;
-  });
-  if (draftShots.length > 0) {
-    const total = draftShots.reduce((sum, s) => sum + Number(s.score), 0);
-    const totalCenterTen = draftShots.filter(s => s.centerTen).length;
-    html += `<li class="shot-total">Totalt: ${formatScore(total, isDecimalMode)} · Sentrumstiere totalt: ${totalCenterTen}</li>`;
+function renderNextHint() {
+  const el = document.getElementById('shot-next');
+  const addBtn = document.getElementById('add-shot');
+  addBtn.disabled = false;
+  if (isPlottMode) { el.textContent = ''; return; }
+  const n = draftShots.length;
+  if (draftFlat) {
+    if (n >= draftFlat.length) {
+      el.textContent = `Alle ${draftFlat.length} skudd i programmet er lagt inn.`;
+      addBtn.disabled = true;
+    } else {
+      const f = draftFlat[n];
+      el.textContent = `Neste: skudd ${n + 1} av ${draftFlat.length} · serie ${f.serie} · ${f.position.toLowerCase()}`;
+    }
+  } else {
+    el.textContent = '';
   }
-  list.innerHTML = html;
+}
 
+function bindDraftListButtons(list) {
   list.querySelectorAll('.shot-move').forEach(btn => {
     btn.addEventListener('click', () => {
       const i = Number(btn.dataset.index);
       const j = btn.dataset.dir === 'up' ? i - 1 : i + 1;
       if (j < 0 || j >= draftShots.length) return;
       [draftShots[i], draftShots[j]] = [draftShots[j], draftShots[i]];
+      applyLayoutToDraft();
       renderDraftShots();
     });
   });
   list.querySelectorAll('.shot-remove').forEach(btn => {
     btn.addEventListener('click', () => {
       draftShots.splice(Number(btn.dataset.index), 1);
+      applyLayoutToDraft();
       renderDraftShots();
     });
   });
+}
+
+function renderDraftShots() {
+  const list = document.getElementById('shot-list');
+  document.getElementById('shots-label').textContent = `Skudd (${draftShots.length})`;
+  renderShotSummary();
+  renderNextHint();
+
+  if (isPlottMode) {
+    renderDraftPlottList(list);
+    return;
+  }
+  list.innerHTML = shotListHtml(draftShots, isDecimalMode, true);
+  bindDraftListButtons(list);
 }
 
 function renderDraftPlottList(list) {
@@ -571,28 +756,13 @@ function renderDraftPlottList(list) {
     </li>
   `).join('');
   if (draftShots.length > 0) {
-    const sumExpected = draftShots.reduce((sum, s) => sum + Number(s.expectedScore), 0);
-    const sumActual = draftShots.reduce((sum, s) => sum + Number(s.actualScore), 0);
+    const sumExpected = draftShots.reduce((sum, s) => sum + plottExpected(s), 0);
+    const sumActual = draftShots.reduce((sum, s) => sum + plottActual(s), 0);
     html += `<li class="shot-subtotal">Sum forventet: ${sumExpected}</li>`;
     html += `<li class="shot-total">Sum faktisk: ${sumActual}</li>`;
   }
   list.innerHTML = html;
-
-  list.querySelectorAll('.shot-move').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const i = Number(btn.dataset.index);
-      const j = btn.dataset.dir === 'up' ? i - 1 : i + 1;
-      if (j < 0 || j >= draftShots.length) return;
-      [draftShots[i], draftShots[j]] = [draftShots[j], draftShots[i]];
-      renderDraftShots();
-    });
-  });
-  list.querySelectorAll('.shot-remove').forEach(btn => {
-    btn.addEventListener('click', () => {
-      draftShots.splice(Number(btn.dataset.index), 1);
-      renderDraftShots();
-    });
-  });
+  bindDraftListButtons(list);
 }
 
 document.getElementById('fab-add').addEventListener('click', () => {
@@ -632,17 +802,37 @@ document.getElementById('cancel-add').addEventListener('click', () => {
   showView(viewList);
 });
 
-document.getElementById('score-up').addEventListener('click', () => setScoreValue(currentScore + (isDecimalMode ? 0.1 : 1)));
-document.getElementById('score-down').addEventListener('click', () => setScoreValue(currentScore - (isDecimalMode ? 0.1 : 1)));
-
 document.getElementById('input-type').addEventListener('change', updateFormModeUI);
 
-document.getElementById('add-shot').addEventListener('click', () => {
-  const position = document.getElementById('shot-position').value;
-  const centerTen = document.getElementById('shot-center-ten').checked;
-  draftShots.push({ position, score: currentScore, centerTen });
-  document.getElementById('shot-center-ten').checked = false;
+function addNormalShot() {
+  const input = document.getElementById('shot-score');
+  const raw = input.value.trim().replace(',', '.');
+  const score = parseFloat(raw);
+  if (raw === '' || isNaN(score) || score < 0 || score > 10.9) {
+    alert('Skriv inn poeng mellom 0 og 10,9 (f.eks. 10,5).');
+    input.focus();
+    return;
+  }
+  const n = draftShots.length;
+  let position, serie;
+  if (draftFlat) {
+    if (n >= draftFlat.length) return;
+    position = draftFlat[n].position;
+    serie = draftFlat[n].serie;
+  } else {
+    position = document.getElementById('input-stilling').value;
+  }
+  const shot = { position, score: Math.round(score * 10) / 10, centerTen: score >= 10.5 };
+  if (serie != null) shot.serie = serie;
+  draftShots.push(shot);
+  input.value = '';
   renderDraftShots();
+  input.focus();
+}
+
+document.getElementById('add-shot').addEventListener('click', addNormalShot);
+document.getElementById('shot-score').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); addNormalShot(); }
 });
 
 document.getElementById('add-plott-shot').addEventListener('click', () => {
@@ -650,7 +840,8 @@ document.getElementById('add-plott-shot').addEventListener('click', () => {
   const expectedDirection = document.getElementById('plott-expected-direction').value;
   const actualScore = parseFloat(document.getElementById('plott-actual-score').value) || 0;
   const actualDirection = document.getElementById('plott-actual-direction').value;
-  draftShots.push({ expectedScore, expectedDirection, actualScore, actualDirection });
+  const position = document.getElementById('input-stilling').value;
+  draftShots.push({ position, expectedScore, expectedDirection, actualScore, actualDirection });
   renderDraftShots();
 });
 
@@ -740,6 +931,7 @@ document.getElementById('save-session').addEventListener('click', async () => {
     trainingType,
     totalShotsFired,
     notes,
+    klasse: draftKlasse || null,
     shots: draftShots,
     images: draftImages
   };
@@ -779,6 +971,7 @@ async function openDetail(id) {
     <div class="detail-row"><span class="detail-row-label">Dato</span><span class="detail-row-value">${formatDate(session.date)}</span></div>
     ${session.season ? `<div class="detail-row"><span class="detail-row-label">Sesong</span><span class="detail-row-value">${session.season}</span></div>` : ''}
     ${session.category ? `<div class="detail-row"><span class="detail-row-label">Type</span><span class="detail-row-value">${session.category}</span></div>` : ''}
+    ${session.klasse ? `<div class="detail-row"><span class="detail-row-label">Klasse</span><span class="detail-row-value">${session.klasse}</span></div>` : ''}
     ${session.trainingType ? `<div class="detail-row"><span class="detail-row-label">Øvelse</span><span class="detail-row-value">${session.trainingType}</span></div>` : ''}
     ${session.trainingType !== 'Plott' ? `<div class="detail-row"><span class="detail-row-label">Totalt poeng</span><span class="detail-row-value">${formatScore(scoreTotal(session), session.trainingType === '60 ligg ISSF')}</span></div>` : ''}
     ${session.totalShotsFired ? `<div class="detail-row"><span class="detail-row-label">Antall skudd totalt</span><span class="detail-row-value">${session.totalShotsFired}</span></div>` : ''}
@@ -1380,7 +1573,7 @@ async function initAuth() {
   const { data: { session } } = await supabase.auth.getSession();
   currentUser = session?.user || null;
   applyAuthUI();
-  if (currentUser) await refreshList();
+  if (currentUser) { await loadProfile(); await refreshList(); }
 
   supabase.auth.onAuthStateChange(async (_event, session) => {
     currentUser = session?.user || null;
@@ -1389,6 +1582,7 @@ async function initAuth() {
       if (window.location.hash.includes('access_token')) {
         history.replaceState(null, '', window.location.pathname);
       }
+      await loadProfile();
       await refreshList();
     }
   });
