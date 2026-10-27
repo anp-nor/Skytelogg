@@ -890,7 +890,9 @@ async function scanSlip(file) {
 
 function applyScanResult(r) {
   const typeVal = document.getElementById('input-type').value;
-  const series = Array.isArray(r.serier) ? r.serier : [];
+  const allSeries = Array.isArray(r.serier) ? r.serier : [];
+  const series = allSeries.filter(s => !s.prove);
+  const proveCount = allSeries.filter(s => s.prove).reduce((t, s) => t + (s.skudd || []).length, 0);
   const scores = series.flatMap(s => (s.skudd || []));
   const warnings = [];
 
@@ -962,13 +964,16 @@ function applyScanResult(r) {
     warnings.push(`Klassen på lappen (${escapeHtml(r.klasse)}) er ikke den samme som din (${draftKlasse}).`);
   }
   if (r.merknader) warnings.push(escapeHtml(r.merknader));
+  const totalEl = document.getElementById('input-total-shots');
+  if (!totalEl.value) totalEl.value = scores.length + proveCount;
 
   applyLayoutToDraft();
   renderDraftShots();
+  const proveNote = proveCount ? ` ${proveCount} prøveskudd ble hoppet over og er regnet med i «Antall skudd totalt».` : '';
   if (warnings.length) {
-    setScanStatus(`Utkast fylt ut (${scores.length} skudd). Sjekk dette:<br>• ${warnings.join('<br>• ')}`, 'warn');
+    setScanStatus(`Utkast fylt ut (${scores.length} skudd).${proveNote} Sjekk dette:<br>• ${warnings.join('<br>• ')}`, 'warn');
   } else {
-    setScanStatus(`Utkast fylt ut: ${scores.length} skudd. Summer og sentrumstiere stemmer med lappen. Se over og trykk Lagre.`, 'ok');
+    setScanStatus(`Utkast fylt ut: ${scores.length} skudd.${proveNote} Summer og sentrumstiere stemmer med lappen. Se over og trykk Lagre.`, 'ok');
   }
 }
 
