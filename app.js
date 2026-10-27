@@ -911,7 +911,7 @@ function applyScanResult(r) {
   }
 
   // Antall skudd må passe med programmet
-  if (draftFlat && scores.length !== draftFlat.length) {
+  if (draftFlat && scores.length < draftFlat.length) {
     const fits = [...document.getElementById('input-type').options]
       .map(o => o.value)
       .filter(t => { const f = programFlat(t, draftKlasse); return f && f.length === scores.length; });
@@ -923,7 +923,11 @@ function applyScanResult(r) {
     return;
   }
 
-  draftShots = scores.map((score, i) => {
+  // Flere skudd enn øvelsen skal ha: bare de første leses inn
+  const allCount = scores.length;
+  const keep = draftFlat ? Math.min(allCount, draftFlat.length) : allCount;
+  const truncated = keep < allCount;
+  draftShots = scores.slice(0, keep).map((score, i) => {
     const f = draftFlat ? draftFlat[i] : null;
     const shot = {
       position: f ? f.position : document.getElementById('input-stilling').value,
@@ -939,8 +943,11 @@ function applyScanResult(r) {
   if (!notesEl.value.trim() && r.stevne) notesEl.value = r.stevne;
 
   // Kontroller mot summene som står på lappen
+  let seen = 0;
   series.forEach((s, i) => {
     const part = s.skudd || [];
+    seen += part.length;
+    if (seen > keep) return; // serien er helt eller delvis utenfor det som logges
     const mine = sumShots(part.map(v => ({ score: v })), isDecimalMode);
     if (typeof s.trykt_sum === 'number' && Math.abs(mine - s.trykt_sum) > (isDecimalMode ? 0.05 : 0)) {
       warnings.push(`Serie ${i + 1}: jeg får ${formatScore(mine, isDecimalMode)}, lappen sier ${s.trykt_sum}.`);
@@ -949,7 +956,7 @@ function applyScanResult(r) {
       warnings.push(`Serie ${i + 1}: sentrumstiere avviker fra lappen (${s.trykt_sentrum}).`);
     }
   });
-  if (typeof r.trykt_total === 'number') {
+  if (!truncated && typeof r.trykt_total === 'number') {
     const mine = sumShots(scores.map(v => ({ score: v })), isDecimalMode);
     if (Math.abs(mine - r.trykt_total) > (isDecimalMode ? 0.05 : 0)) {
       warnings.push(`Totalsum: jeg får ${formatScore(mine, isDecimalMode)}, lappen sier ${r.trykt_total}.`);
@@ -965,15 +972,16 @@ function applyScanResult(r) {
   }
   if (r.merknader) warnings.push(escapeHtml(r.merknader));
   const totalEl = document.getElementById('input-total-shots');
-  if (!totalEl.value) totalEl.value = scores.length + proveCount;
+  if (!totalEl.value) totalEl.value = allCount + proveCount;
 
   applyLayoutToDraft();
   renderDraftShots();
+  const cutNote = truncated ? ` Lappen har ${allCount} skudd. Bare de første ${keep} er lagt inn.` : '';
   const proveNote = proveCount ? ` ${proveCount} prøveskudd ble hoppet over og er regnet med i «Antall skudd totalt».` : '';
   if (warnings.length) {
-    setScanStatus(`Utkast fylt ut (${scores.length} skudd).${proveNote} Sjekk dette:<br>• ${warnings.join('<br>• ')}`, 'warn');
+    setScanStatus(`Utkast fylt ut (${keep} skudd).${cutNote}${proveNote} Sjekk dette:<br>• ${warnings.join('<br>• ')}`, 'warn');
   } else {
-    setScanStatus(`Utkast fylt ut: ${scores.length} skudd.${proveNote} Summer og sentrumstiere stemmer med lappen. Se over og trykk Lagre.`, 'ok');
+    setScanStatus(`Utkast fylt ut: ${keep} skudd.${cutNote}${proveNote} Summer og sentrumstiere stemmer med lappen. Se over og trykk Lagre.`, 'ok');
   }
 }
 
