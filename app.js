@@ -888,7 +888,10 @@ async function scanSlip(file) {
   return res.result;
 }
 
+let scanFilled = false;
+
 function applyScanResult(r) {
+  scanFilled = false;
   const typeVal = document.getElementById('input-type').value;
   const allSeries = Array.isArray(r.serier) ? r.serier : [];
   const series = allSeries.filter(s => !s.prove);
@@ -938,6 +941,7 @@ function applyScanResult(r) {
     return shot;
   });
 
+  scanFilled = true;
   if (/^\d{4}-\d{2}-\d{2}$/.test(r.dato || '')) document.getElementById('input-date').value = r.dato;
   const notesEl = document.getElementById('input-notes');
   if (!notesEl.value.trim() && r.stevne) notesEl.value = r.stevne;
@@ -985,6 +989,51 @@ function applyScanResult(r) {
   }
 }
 
+const PDFJS_VERSION = '3.11.174';
+async function loadPdfJs() {
+  if (window.pdfjsLib) return window.pdfjsLib;
+  await new Promise((resolve, reject) => {
+    const sc = document.createElement('script');
+    sc.src = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.min.js`;
+    sc.onload = resolve;
+    sc.onerror = () => reject(new Error('Kunne ikke laste PDF-visning'));
+    document.head.appendChild(sc);
+  });
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+    `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.js`;
+  return window.pdfjsLib;
+}
+
+async function pdfFirstPageToJpeg(file, maxDim = 1600, quality = 0.75) {
+  const lib = await loadPdfJs();
+  const pdf = await lib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const page = await pdf.getPage(1);
+  const base = page.getViewport({ scale: 1 });
+  const viewport = page.getViewport({ scale: maxDim / Math.max(base.width, base.height) });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(viewport.width);
+  canvas.height = Math.round(viewport.height);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
+async function archiveScannedFile(file) {
+  try {
+    const url = file.type === 'application/pdf'
+      ? await pdfFirstPageToJpeg(file)
+      : await compressImage(file, 1600, 0.75);
+    if (draftImages.includes(url)) return 'Lappen lå allerede under Bilder.';
+    draftImages.push(url);
+    renderDraftImages();
+    return 'Lappen er lagt til under Bilder (fjern den med × hvis du ikke vil arkivere den).';
+  } catch (e) {
+    return 'Lappen kunne ikke legges til under Bilder automatisk.';
+  }
+}
+
 document.getElementById('scan-btn').addEventListener('click', () => {
   document.getElementById('scan-file').click();
 });
@@ -1000,6 +1049,11 @@ document.getElementById('scan-file').addEventListener('change', async (e) => {
   try {
     const result = await scanSlip(file);
     applyScanResult(result);
+    if (scanFilled) {
+      const note = await archiveScannedFile(file);
+      const el = document.getElementById('scan-status');
+      el.innerHTML += `<br>${note}`;
+    }
   } catch (err) {
     setScanStatus('Skanningen feilet: ' + escapeHtml(err.message || String(err)), 'warn');
   } finally {
