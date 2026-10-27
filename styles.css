@@ -833,3 +833,8 @@ body {
   list-style: none;
   margin: 14px 0 4px;
 }
+
+.scan-status { font-size: 13px; line-height: 1.45; margin-top: 8px; color: var(--text-dim); }
+.scan-status.scan-ok { color: #8FA66B; }
+.scan-status.scan-warn { color: #D9A35B; }
+.add-shot-btn:disabled { opacity: .5; }

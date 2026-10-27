@@ -132,6 +132,12 @@
   <div class="form-block" id="klasse-info" hidden></div>
 
   <div class="form-block">
+    <input type="file" id="scan-file" accept="image/*,application/pdf" class="file-input-hidden">
+    <button type="button" id="scan-btn" class="add-shot-btn">Skann skytelapp</button>
+    <div id="scan-status" class="scan-status"></div>
+  </div>
+
+  <div class="form-block">
     <label class="field-label" for="input-total-shots">Antall skudd totalt (inkl. prøveskudd)</label>
     <input type="number" id="input-total-shots" class="field-input" placeholder="f.eks. 40">
   </div>

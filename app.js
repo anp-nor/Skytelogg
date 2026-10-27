@@ -619,6 +619,7 @@ function resetAddForm() {
   document.getElementById('input-total-shots').value = '';
   document.getElementById('input-notes').value = '';
   document.getElementById('shot-score').value = '';
+  setScanStatus('', '');
   draftShots = [];
   draftImages = [];
   renderDraftImages();
@@ -636,6 +637,7 @@ function openEditForm(session) {
   document.getElementById('input-total-shots').value = session.totalShotsFired || '';
   document.getElementById('input-notes').value = session.notes || '';
   document.getElementById('shot-score').value = '';
+  setScanStatus('', '');
   draftKlasse = session.klasse || '';
   draftShots = session.shots.map(s => ({ ...s }));
   draftLegacy = session.trainingType !== 'Plott' && draftShots.length > 0 && !draftShots.every(s => s.serie != null);
@@ -843,6 +845,153 @@ document.getElementById('add-plott-shot').addEventListener('click', () => {
   const position = document.getElementById('input-stilling').value;
   draftShots.push({ position, expectedScore, expectedDirection, actualScore, actualDirection });
   renderDraftShots();
+});
+
+// ---- Skann skytelapp ----
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+function setScanStatus(html, kind) {
+  const el = document.getElementById('scan-status');
+  el.className = 'scan-status' + (kind ? ' scan-' + kind : '');
+  el.innerHTML = html;
+}
+
+function nameTokens(n) {
+  return String(n || '').toLowerCase().split(/[\s-]+/).filter(t => t.length > 1);
+}
+
+async function scanSlip(file) {
+  let mediaType, data;
+  if (file.type === 'application/pdf') {
+    if (file.size > 6 * 1024 * 1024) throw new Error('PDF-en er for stor (maks 6 MB).');
+    mediaType = 'application/pdf';
+    data = (await readFileAsDataURL(file)).split(',')[1];
+  } else {
+    const url = await compressImage(file, 2200, 0.85);
+    mediaType = 'image/jpeg';
+    data = url.split(',')[1];
+  }
+  const { data: res, error } = await supabase.functions.invoke('scan-skytelapp', { body: { mediaType, data } });
+  if (error) {
+    let msg = error.message;
+    try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch (e) { /* ignorer */ }
+    throw new Error(msg);
+  }
+  if (!res || res.error || !res.result) throw new Error((res && res.error) || 'Ingen svar fra skanningen.');
+  return res.result;
+}
+
+function applyScanResult(r) {
+  const typeVal = document.getElementById('input-type').value;
+  const series = Array.isArray(r.serier) ? r.serier : [];
+  const scores = series.flatMap(s => (s.skudd || []));
+  const warnings = [];
+
+  if (isPlottMode) {
+    setScanStatus('Skanning støttes ikke for Plott.', 'warn');
+    return;
+  }
+  if (scores.length === 0) {
+    setScanStatus('Fant ingen skudd på lappen.', 'warn');
+    return;
+  }
+  if (scores.some(v => typeof v !== 'number' || isNaN(v))) {
+    const n = scores.filter(v => typeof v !== 'number' || isNaN(v)).length;
+    setScanStatus(`${n} skudd var uleselige. Prøv et skarpere bilde eller PDF.`, 'warn');
+    return;
+  }
+
+  // Antall skudd må passe med programmet
+  if (draftFlat && scores.length !== draftFlat.length) {
+    const fits = [...document.getElementById('input-type').options]
+      .map(o => o.value)
+      .filter(t => { const f = programFlat(t, draftKlasse); return f && f.length === scores.length; });
+    setScanStatus(
+      `Lappen har ${scores.length} skudd, men «${typeVal}» har ${draftFlat.length}. ` +
+      (fits.length ? `Velg ${fits.map(f => '«' + f + '»').join(' eller ')} og skann på nytt.` : 'Velg riktig øvelse og skann på nytt.'),
+      'warn'
+    );
+    return;
+  }
+
+  draftShots = scores.map((score, i) => {
+    const f = draftFlat ? draftFlat[i] : null;
+    const shot = {
+      position: f ? f.position : document.getElementById('input-stilling').value,
+      score: Math.round(score * 10) / 10,
+      centerTen: score >= 10.5
+    };
+    if (f) shot.serie = f.serie;
+    return shot;
+  });
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(r.dato || '')) document.getElementById('input-date').value = r.dato;
+  const notesEl = document.getElementById('input-notes');
+  if (!notesEl.value.trim() && r.stevne) notesEl.value = r.stevne;
+
+  // Kontroller mot summene som står på lappen
+  series.forEach((s, i) => {
+    const part = s.skudd || [];
+    const mine = sumShots(part.map(v => ({ score: v })), isDecimalMode);
+    if (typeof s.trykt_sum === 'number' && Math.abs(mine - s.trykt_sum) > (isDecimalMode ? 0.05 : 0)) {
+      warnings.push(`Serie ${i + 1}: jeg får ${formatScore(mine, isDecimalMode)}, lappen sier ${s.trykt_sum}.`);
+    }
+    if (typeof s.trykt_sentrum === 'number' && countCenterTens(part.map(v => ({ score: v }))) !== s.trykt_sentrum) {
+      warnings.push(`Serie ${i + 1}: sentrumstiere avviker fra lappen (${s.trykt_sentrum}).`);
+    }
+  });
+  if (typeof r.trykt_total === 'number') {
+    const mine = sumShots(scores.map(v => ({ score: v })), isDecimalMode);
+    if (Math.abs(mine - r.trykt_total) > (isDecimalMode ? 0.05 : 0)) {
+      warnings.push(`Totalsum: jeg får ${formatScore(mine, isDecimalMode)}, lappen sier ${r.trykt_total}.`);
+    }
+  }
+  if (profile.name && r.navn) {
+    const mineT = nameTokens(profile.name);
+    const slipT = nameTokens(r.navn);
+    if (!mineT.some(t => slipT.includes(t))) warnings.push(`Navnet på lappen (${escapeHtml(r.navn)}) ser ikke ut til å være ditt.`);
+  }
+  if (draftKlasse && r.klasse && String(r.klasse).trim().toLowerCase() !== draftKlasse.toLowerCase()) {
+    warnings.push(`Klassen på lappen (${escapeHtml(r.klasse)}) er ikke den samme som din (${draftKlasse}).`);
+  }
+  if (r.merknader) warnings.push(escapeHtml(r.merknader));
+
+  applyLayoutToDraft();
+  renderDraftShots();
+  if (warnings.length) {
+    setScanStatus(`Utkast fylt ut (${scores.length} skudd). Sjekk dette:<br>• ${warnings.join('<br>• ')}`, 'warn');
+  } else {
+    setScanStatus(`Utkast fylt ut: ${scores.length} skudd. Summer og sentrumstiere stemmer med lappen. Se over og trykk Lagre.`, 'ok');
+  }
+}
+
+document.getElementById('scan-btn').addEventListener('click', () => {
+  document.getElementById('scan-file').click();
+});
+
+document.getElementById('scan-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (draftShots.length > 0 && !confirm('Skanningen erstatter skuddene du allerede har lagt inn. Fortsette?')) return;
+  const btn = document.getElementById('scan-btn');
+  btn.disabled = true;
+  setScanStatus('Leser skytelappen… det kan ta opptil et halvt minutt.', '');
+  try {
+    const result = await scanSlip(file);
+    applyScanResult(result);
+  } catch (err) {
+    setScanStatus('Skanningen feilet: ' + escapeHtml(err.message || String(err)), 'warn');
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 // ---- Images ----
