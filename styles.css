@@ -838,3 +838,38 @@ body {
 .scan-status.scan-ok { color: #8FA66B; }
 .scan-status.scan-warn { color: #D9A35B; }
 .add-shot-btn:disabled { opacity: .5; }
+
+/* ---- Trenermodul ---- */
+.fab[hidden] { display: none; }
+.viewas-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: var(--brass-dim, #5a4a2d); color: var(--text, #eee);
+  padding: 8px 16px; font-size: 13px;
+}
+.viewas-banner[hidden] { display: none; }
+.people-list { list-style: none; margin: 0 0 8px; padding: 0; }
+.people-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 0; border-bottom: 1px solid var(--hairline);
+}
+.people-item-main { min-width: 0; flex: 1; cursor: default; }
+.people-item-main.clickable { cursor: pointer; }
+.people-item-name { font-size: 15px; }
+.people-item-sub { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; }
+.people-item-actions { display: flex; gap: 12px; }
+.people-empty { color: var(--text-dim); font-size: 13px; padding: 6px 0; }
+.comments-box { margin: 16px 0 0; }
+.comments-box:empty { display: none; }
+.comments-title {
+  font-size: 12px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-dim); margin-bottom: 6px;
+}
+.comment {
+  background: var(--bg-raised); border: 1px solid var(--hairline);
+  border-radius: 6px; padding: 8px 10px; margin-bottom: 6px;
+}
+.comment-meta { font-size: 11px; color: var(--text-dim); margin-bottom: 2px; }
+.comment-body { font-size: 14px; white-space: pre-wrap; }
+.comment-del { background: none; border: none; color: var(--danger, #c0564a); font-size: 11px; padding: 0 0 0 6px; }
+.comment-input { width: 100%; box-sizing: border-box; min-height: 60px; margin: 6px 0; font-family: var(--sans); }
+.text-btn[hidden], .delete-full-btn[hidden], .add-shot-btn[hidden] { display: none; }

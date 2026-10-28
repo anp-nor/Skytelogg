@@ -37,9 +37,15 @@
     <div class="topbar-sub">Treningsdagbok for DFS-skyting</div>
   </div>
   <div class="topbar-actions">
+    <button class="text-btn" id="people-btn">Trener</button>
     <button class="text-btn" id="logout-btn">Logg ut</button>
   </div>
 </header>
+
+<div id="viewas-banner" class="viewas-banner" hidden>
+  <span id="viewas-text"></span>
+  <button class="text-btn" id="viewas-exit">Tilbake</button>
+</div>
 
 <main id="view-list" class="view">
   <div class="profile-card">
@@ -75,6 +81,37 @@
     <button class="text-btn" id="add-menu-cancel">Avbryt</button>
   </div>
 </div>
+
+<!-- Trener og tilgang -->
+<main id="view-people" class="view" hidden>
+  <header class="subbar">
+    <button class="text-btn" id="back-people">Tilbake</button>
+    <div class="subbar-title">Trener og tilgang</div>
+    <span></span>
+  </header>
+
+  <div class="section-label">Forespørsler til deg</div>
+  <ul id="people-incoming" class="people-list"></ul>
+
+  <div class="section-label">Trenere med tilgang til loggen din</div>
+  <ul id="people-trainers" class="people-list"></ul>
+
+  <div class="section-divider"></div>
+
+  <div class="section-label">Utøvere du følger</div>
+  <ul id="people-athletes" class="people-list"></ul>
+
+  <div class="section-label">Be om tilgang som trener</div>
+  <div class="form-block">
+    <label class="field-label" for="people-email">Utøverens e-postadresse</label>
+    <input type="email" id="people-email" class="field-input" placeholder="utover@epost.no" autocomplete="off">
+  </div>
+  <button id="people-send" class="add-shot-btn">Send forespørsel</button>
+  <div id="people-status" class="scan-status"></div>
+
+  <div class="section-label">Forespørsler du har sendt</div>
+  <ul id="people-sent" class="people-list"></ul>
+</main>
 
 <!-- Add / Edit session view -->
 <main id="view-add" class="view" hidden>
@@ -306,6 +343,7 @@
     <input type="text" id="physical-comment" class="field-input" placeholder="Notater...">
   </div>
 
+  <div id="physical-comments" class="comments-box"></div>
   <button id="delete-physical" class="delete-full-btn" hidden>Slett</button>
 </main>
 
@@ -345,6 +383,7 @@
     <input type="text" id="mental-comment" class="field-input" placeholder="Notater...">
   </div>
 
+  <div id="mental-comments" class="comments-box"></div>
   <button id="delete-mental" class="delete-full-btn" hidden>Slett</button>
 </main>
 
@@ -390,6 +429,7 @@
     <input type="text" id="dryfire-comment" class="field-input" placeholder="Notater...">
   </div>
 
+  <div id="dryfire-comments" class="comments-box"></div>
   <button id="delete-dryfire" class="delete-full-btn" hidden>Slett</button>
 </main>
 
@@ -454,6 +494,7 @@
       <label class="goal-achieved-label"><input type="checkbox" id="goal-prestasjon-achieved3">Oppnådd</label>
     </div>
     <input type="text" id="goal-prestasjon-comment" class="field-input" placeholder="Kommentar">
+    <div id="goal-prestasjon-trainer" class="comments-box"></div>
   </div>
 
   <div class="goal-area">
@@ -473,6 +514,7 @@
       <label class="goal-achieved-label"><input type="checkbox" id="goal-teknisk-achieved3">Oppnådd</label>
     </div>
     <input type="text" id="goal-teknisk-comment" class="field-input" placeholder="Kommentar">
+    <div id="goal-teknisk-trainer" class="comments-box"></div>
   </div>
 
   <div class="goal-area">
@@ -492,6 +534,7 @@
       <label class="goal-achieved-label"><input type="checkbox" id="goal-mental-achieved3">Oppnådd</label>
     </div>
     <input type="text" id="goal-mental-comment" class="field-input" placeholder="Kommentar">
+    <div id="goal-mental-trainer" class="comments-box"></div>
   </div>
 </main>
 

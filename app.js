@@ -91,11 +91,11 @@ function sessionToRow(session) {
 }
 
 // ---- Remote CRUD (Supabase) ----
-async function fetchSessions() {
-  const { data, error } = await supabase.from('sessions').select('*').order('date', { ascending: false });
+async function fetchSessions(uid = currentUser.id, cache = true) {
+  const { data, error } = await supabase.from('sessions').select('*').eq('user_id', uid).order('date', { ascending: false });
   if (error) throw error;
   const mapped = data.map(rowToSession);
-  await cacheSessionsLocally(mapped);
+  if (cache) await cacheSessionsLocally(mapped);
   return mapped;
 }
 
@@ -117,8 +117,8 @@ async function deleteSessionRemote(id) {
 }
 
 // ---- Physical training CRUD ----
-async function fetchPhysicalSessions() {
-  const { data, error } = await supabase.from('physical_sessions').select('*').order('date', { ascending: false });
+async function fetchPhysicalSessions(uid = currentUser.id) {
+  const { data, error } = await supabase.from('physical_sessions').select('*').eq('user_id', uid).order('date', { ascending: false });
   if (error) throw error;
   return data;
 }
@@ -140,8 +140,8 @@ async function deletePhysicalSession(id) {
 }
 
 // ---- Mental training CRUD ----
-async function fetchMentalSessions() {
-  const { data, error } = await supabase.from('mental_sessions').select('*').order('date', { ascending: false });
+async function fetchMentalSessions(uid = currentUser.id) {
+  const { data, error } = await supabase.from('mental_sessions').select('*').eq('user_id', uid).order('date', { ascending: false });
   if (error) throw error;
   return data;
 }
@@ -163,8 +163,8 @@ async function deleteMentalSession(id) {
 }
 
 // ---- Dryfire training CRUD ----
-async function fetchDryfireSessions() {
-  const { data, error } = await supabase.from('dryfire_sessions').select('*').order('date', { ascending: false });
+async function fetchDryfireSessions(uid = currentUser.id) {
+  const { data, error } = await supabase.from('dryfire_sessions').select('*').eq('user_id', uid).order('date', { ascending: false });
   if (error) throw error;
   return data;
 }
@@ -186,8 +186,8 @@ async function deleteDryfireSession(id) {
 }
 
 // ---- Goals CRUD ----
-async function fetchGoals() {
-  const { data, error } = await supabase.from('goals').select('*');
+async function fetchGoals(uid = currentUser.id) {
+  const { data, error } = await supabase.from('goals').select('*').eq('user_id', uid);
   if (error) throw error;
   return data;
 }
@@ -211,6 +211,7 @@ let editingId = null;
 let editingPhysicalId = null;
 let editingMentalId = null;
 let editingDryfireId = null;
+let viewAs = null; // {id, name, email, klasse} når treneren ser en utøvers logg
 let isDecimalMode = false;
 let isPlottMode = false;
 
@@ -365,13 +366,15 @@ const viewDryfireAdd = document.getElementById('view-dryfire-add');
 const viewCalendar = document.getElementById('view-calendar');
 const viewGoals = document.getElementById('view-goals');
 const viewHistory = document.getElementById('view-history');
+const viewPeople = document.getElementById('view-people');
 const bottomNav = document.getElementById('bottom-nav');
-const allViews = [viewList, viewAdd, viewDetail, viewStats, viewPhysicalAdd, viewMentalAdd, viewDryfireAdd, viewCalendar, viewGoals, viewHistory];
+const allViews = [viewList, viewAdd, viewDetail, viewStats, viewPhysicalAdd, viewMentalAdd, viewDryfireAdd, viewCalendar, viewGoals, viewHistory, viewPeople];
 
 function showView(view) {
   allViews.forEach(v => v.hidden = true);
   view.hidden = false;
   bottomNav.hidden = (view !== viewList);
+  document.getElementById('fab-add').hidden = !!viewAs || view === viewPeople;
 }
 
 // ---- Rendering: list view ----
@@ -551,6 +554,7 @@ async function refreshList() {
   }
   renderStats();
   renderTypeStats();
+  updatePeopleBadge();
 }
 
 // ---- Profil (navn og klasse) ----
@@ -570,6 +574,9 @@ async function loadProfile() {
   } catch (e) { /* ignorer */ }
   try {
     const { data } = await supabase.from('profiles').select('name, klasse').eq('id', currentUser.id).maybeSingle();
+    if (!data) {
+      await supabase.from('profiles').upsert({ id: currentUser.id, email: currentUser.email }, { onConflict: 'id' });
+    }
     if (data && (data.name || data.klasse)) {
       profile = { name: data.name || '', klasse: data.klasse || '' };
       try { localStorage.setItem(profileKey(), JSON.stringify(profile)); } catch (e) { /* ignorer */ }
@@ -913,19 +920,6 @@ function applyScanResult(r) {
     return;
   }
 
-  // Antall skudd må passe med programmet
-  if (draftFlat && scores.length < draftFlat.length) {
-    const fits = [...document.getElementById('input-type').options]
-      .map(o => o.value)
-      .filter(t => { const f = programFlat(t, draftKlasse); return f && f.length === scores.length; });
-    setScanStatus(
-      `Lappen har ${scores.length} skudd, men «${typeVal}» har ${draftFlat.length}. ` +
-      (fits.length ? `Velg ${fits.map(f => '«' + f + '»').join(' eller ')} og skann på nytt.` : 'Velg riktig øvelse og skann på nytt.'),
-      'warn'
-    );
-    return;
-  }
-
   // Flere skudd enn øvelsen skal ha: bare de første leses inn
   const allCount = scores.length;
   const keep = draftFlat ? Math.min(allCount, draftFlat.length) : allCount;
@@ -980,12 +974,21 @@ function applyScanResult(r) {
 
   applyLayoutToDraft();
   renderDraftShots();
+  const fewer = !!draftFlat && keep < draftFlat.length;
+  let fewNote = '';
+  if (fewer) {
+    const fits = [...document.getElementById('input-type').options]
+      .map(o => o.value)
+      .filter(t => { const f = programFlat(t, draftKlasse); return f && f.length === keep; });
+    fewNote = ` Lappen har færre skudd (${keep}) enn «${typeVal}» skal ha (${draftFlat.length}). De ${keep} skuddene er lagt inn.` +
+      (fits.length ? ` Hvis du skjøt ${fits.map(f => '«' + f + '»').join(' eller ')}, bytt øvelse og skann på nytt.` : '');
+  }
   const cutNote = truncated ? ` Lappen har ${allCount} skudd. Bare de første ${keep} er lagt inn.` : '';
   const proveNote = proveCount ? ` ${proveCount} prøveskudd ble hoppet over og er regnet med i «Antall skudd totalt».` : '';
   if (warnings.length) {
-    setScanStatus(`Utkast fylt ut (${keep} skudd).${cutNote}${proveNote} Sjekk dette:<br>• ${warnings.join('<br>• ')}`, 'warn');
+    setScanStatus(`Utkast fylt ut (${keep} skudd).${cutNote}${fewNote}${proveNote} Sjekk dette:<br>• ${warnings.join('<br>• ')}`, 'warn');
   } else {
-    setScanStatus(`Utkast fylt ut: ${keep} skudd.${cutNote}${proveNote} Summer og sentrumstiere stemmer med lappen. Se over og trykk Lagre.`, 'ok');
+    setScanStatus(`Utkast fylt ut: ${keep} skudd.${cutNote}${fewNote}${proveNote} Summer og sentrumstiere stemmer med lappen. Se over og trykk Lagre.`, fewer ? 'warn' : 'ok');
   }
 }
 
@@ -1202,7 +1205,11 @@ async function openDetail(id) {
         ${session.images.map((src, i) => `<div class="image-thumb" data-index="${i}"><img src="${src}" alt=""></div>`).join('')}
       </div>
     ` : ''}
+    <div id="detail-comments" class="comments-box"></div>
   `;
+  document.getElementById('edit-session').hidden = !!viewAs;
+  document.getElementById('delete-session').hidden = !!viewAs;
+  renderComments(document.getElementById('detail-comments'), 'skyting', session.id);
 
   const detailThumbs = document.getElementById('detail-image-thumbs');
   if (detailThumbs) {
@@ -1368,6 +1375,7 @@ function drawLineChart(canvas, points) {
 
 // ---- Physical training form ----
 function resetPhysicalForm() {
+  document.getElementById('physical-comments').innerHTML = '';
   editingPhysicalId = null;
   document.getElementById('physical-title').textContent = 'Fysisk trening';
   document.getElementById('delete-physical').hidden = true;
@@ -1388,6 +1396,8 @@ function openPhysicalDetail(entry) {
   document.getElementById('physical-type').value = entry.type;
   document.getElementById('physical-duration').value = entry.duration_minutes || '';
   document.getElementById('physical-comment').value = entry.comment || '';
+  setFormReadOnly('view-physical-add', 'save-physical', 'delete-physical', !!viewAs);
+  renderComments(document.getElementById('physical-comments'), 'fysisk', entry.id);
   showView(viewPhysicalAdd);
 }
 
@@ -1434,6 +1444,7 @@ document.getElementById('delete-physical').addEventListener('click', async () =>
 
 // ---- Mental training form ----
 function resetMentalForm() {
+  document.getElementById('mental-comments').innerHTML = '';
   editingMentalId = null;
   document.getElementById('mental-title').textContent = 'Mental trening';
   document.getElementById('delete-mental').hidden = true;
@@ -1454,6 +1465,8 @@ function openMentalDetail(entry) {
   document.getElementById('mental-type').value = entry.type;
   document.getElementById('mental-duration').value = entry.duration_minutes || '';
   document.getElementById('mental-comment').value = entry.comment || '';
+  setFormReadOnly('view-mental-add', 'save-mental', 'delete-mental', !!viewAs);
+  renderComments(document.getElementById('mental-comments'), 'mentalt', entry.id);
   showView(viewMentalAdd);
 }
 
@@ -1500,6 +1513,7 @@ document.getElementById('delete-mental').addEventListener('click', async () => {
 
 // ---- Dryfire training form ----
 function resetDryfireForm() {
+  document.getElementById('dryfire-comments').innerHTML = '';
   editingDryfireId = null;
   document.getElementById('dryfire-title').textContent = 'Tørrtrening';
   document.getElementById('delete-dryfire').hidden = true;
@@ -1522,6 +1536,8 @@ function openDryfireDetail(entry) {
   document.getElementById('dryfire-duration').value = entry.duration_minutes || '';
   document.getElementById('dryfire-shots').value = entry.shot_count || '';
   document.getElementById('dryfire-comment').value = entry.comment || '';
+  setFormReadOnly('view-dryfire-add', 'save-dryfire', 'delete-dryfire', !!viewAs);
+  renderComments(document.getElementById('dryfire-comments'), 'tørrtrening', entry.id);
   showView(viewDryfireAdd);
 }
 
@@ -1742,6 +1758,8 @@ function loadGoalsIntoForm(season) {
     document.getElementById(`${prefix}-achieved2`).checked = !!existing?.achieved2;
     document.getElementById(`${prefix}-achieved3`).checked = !!existing?.achieved3;
   });
+  setGoalsReadOnly(!!viewAs);
+  renderGoalComments(season);
 }
 
 document.getElementById('nav-goals').addEventListener('click', () => {
@@ -1783,6 +1801,271 @@ document.getElementById('nav-history').addEventListener('click', () => {
   showView(viewHistory);
 });
 document.getElementById('back-history').addEventListener('click', () => showView(viewList));
+
+// ---- Trenermodul ----
+function setFormReadOnly(viewId, saveId, delId, ro) {
+  document.querySelectorAll(`#${viewId} input, #${viewId} select, #${viewId} textarea`).forEach(el => { el.disabled = ro; });
+  document.getElementById(saveId).hidden = ro;
+  if (ro) document.getElementById(delId).hidden = true;
+}
+
+function setGoalsReadOnly(ro) {
+  document.querySelectorAll('#view-goals input, #view-goals select').forEach(el => {
+    if (el.id === 'goals-season') return;
+    el.disabled = ro;
+  });
+  document.getElementById('save-goals').hidden = ro;
+}
+
+function formatDateTime(iso) {
+  return new Date(iso).toLocaleString('nb-NO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+async function renderComments(el, targetType, targetId) {
+  if (!el) return;
+  el.innerHTML = '';
+  const owner = viewAs ? viewAs.id : currentUser.id;
+  let rows = [];
+  try {
+    const { data, error } = await supabase.from('trainer_comments').select('*')
+      .eq('athlete_id', owner).eq('target_type', targetType).eq('target_id', String(targetId))
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    rows = data || [];
+  } catch (e) {
+    if (!viewAs) return;
+  }
+  if (!rows.length && !viewAs) return;
+
+  let html = '<div class="comments-title">Trenerkommentarer</div>';
+  html += rows.map(c => `
+    <div class="comment">
+      <div class="comment-meta">${escapeHtml(c.trainer_label || 'Trener')} · ${formatDateTime(c.created_at)}${viewAs && c.trainer_id === currentUser.id ? `<button class="comment-del" data-id="${c.id}">slett</button>` : ''}</div>
+      <div class="comment-body">${escapeHtml(c.body)}</div>
+    </div>`).join('');
+  if (viewAs) {
+    html += `<textarea class="field-input comment-input" placeholder="Skriv en kommentar til utøveren…"></textarea>
+             <button class="add-shot-btn comment-send">Send kommentar</button>`;
+  }
+  el.innerHTML = html;
+
+  el.querySelectorAll('.comment-del').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const { error } = await supabase.from('trainer_comments').delete().eq('id', btn.dataset.id);
+      if (error) { alert('Kunne ikke slette kommentaren.'); return; }
+      renderComments(el, targetType, targetId);
+    });
+  });
+  const send = el.querySelector('.comment-send');
+  if (send) {
+    send.addEventListener('click', async () => {
+      const ta = el.querySelector('.comment-input');
+      const body = ta.value.trim();
+      if (!body) return;
+      send.disabled = true;
+      const { error } = await supabase.from('trainer_comments').insert({
+        athlete_id: viewAs.id,
+        trainer_id: currentUser.id,
+        trainer_label: profile.name || currentUser.email,
+        target_type: targetType,
+        target_id: String(targetId),
+        body
+      });
+      if (error) { alert('Kunne ikke lagre kommentaren.'); send.disabled = false; return; }
+      renderComments(el, targetType, targetId);
+    });
+  }
+}
+
+function renderGoalComments(season) {
+  GOAL_AREAS.forEach(({ key, prefix }) => {
+    renderComments(document.getElementById(`goal-${prefix.replace('goal-', '')}-trainer`), 'mål', `${season}|${key}`);
+  });
+}
+
+function personLabel(p) {
+  return p ? (p.name || p.email || 'Ukjent') : 'Ukjent';
+}
+
+let peopleAthletes = [];
+
+async function updatePeopleBadge() {
+  const btn = document.getElementById('people-btn');
+  try {
+    const { data } = await supabase.from('trainer_requests').select('id, trainer_id');
+    const n = (data || []).filter(r => r.trainer_id !== currentUser.id).length;
+    btn.textContent = n ? `Trener (${n})` : 'Trener';
+  } catch (e) { btn.textContent = 'Trener'; }
+}
+
+function peopleEmpty(text) { return `<li class="people-empty">${text}</li>`; }
+
+async function loadPeople() {
+  const uid = currentUser.id;
+  let requests = [], links = [], profiles = [];
+  try {
+    const r1 = await supabase.from('trainer_requests').select('*').order('created_at', { ascending: false });
+    if (r1.error) throw r1.error;
+    requests = r1.data || [];
+    const r2 = await supabase.from('trainer_athletes').select('*').eq('status', 'accepted');
+    if (r2.error) throw r2.error;
+    links = r2.data || [];
+    const ids = [...new Set(links.map(l => (l.trainer_id === uid ? l.athlete_id : l.trainer_id)))];
+    if (ids.length) {
+      const r3 = await supabase.from('profiles').select('id, name, email, klasse').in('id', ids);
+      profiles = r3.data || [];
+    }
+  } catch (e) {
+    document.getElementById('people-status').textContent = 'Kunne ikke hente data. Har du kjørt schema_v6.sql i Supabase?';
+    return;
+  }
+  const prof = (id) => profiles.find(p => p.id === id);
+
+  const incoming = requests.filter(r => r.trainer_id !== uid);
+  const sent = requests.filter(r => r.trainer_id === uid);
+  const myTrainers = links.filter(l => l.athlete_id === uid && l.trainer_id !== uid);
+  const myAthletes = links.filter(l => l.trainer_id === uid && l.athlete_id !== uid);
+
+  document.getElementById('people-incoming').innerHTML = incoming.length ? incoming.map(r => `
+    <li class="people-item">
+      <div class="people-item-main">
+        <div class="people-item-name">${escapeHtml(r.trainer_name || r.trainer_email || 'Trener')}</div>
+        <div class="people-item-sub">${escapeHtml(r.trainer_email || '')} vil følge loggen din</div>
+      </div>
+      <div class="people-item-actions">
+        <button class="text-btn text-btn-primary" data-act="accept" data-id="${r.id}">Godta</button>
+        <button class="text-btn" data-act="decline" data-id="${r.id}">Avslå</button>
+      </div>
+    </li>`).join('') : peopleEmpty('Ingen forespørsler.');
+
+  document.getElementById('people-trainers').innerHTML = myTrainers.length ? myTrainers.map(l => {
+    const p = prof(l.trainer_id);
+    return `<li class="people-item">
+      <div class="people-item-main">
+        <div class="people-item-name">${escapeHtml(personLabel(p))}</div>
+        <div class="people-item-sub">${escapeHtml(p?.email || '')}</div>
+      </div>
+      <div class="people-item-actions"><button class="text-btn" data-act="remove-trainer" data-trainer="${l.trainer_id}" data-athlete="${l.athlete_id}">Fjern</button></div>
+    </li>`;
+  }).join('') : peopleEmpty('Ingen trenere har tilgang.');
+
+  peopleAthletes = myAthletes.map(l => {
+    const p = prof(l.athlete_id) || {};
+    return { id: l.athlete_id, name: p.name || '', email: p.email || '', klasse: p.klasse || '' };
+  });
+  document.getElementById('people-athletes').innerHTML = peopleAthletes.length ? peopleAthletes.map((a, i) => `
+    <li class="people-item">
+      <div class="people-item-main clickable" data-act="open-athlete" data-index="${i}">
+        <div class="people-item-name">${escapeHtml(a.name || a.email || 'Utøver')}</div>
+        <div class="people-item-sub">${escapeHtml(a.email)}${a.klasse ? ' · klasse ' + escapeHtml(a.klasse) : ''}</div>
+      </div>
+      <div class="people-item-actions"><button class="text-btn" data-act="unfollow" data-trainer="${uid}" data-athlete="${a.id}">Slutt å følge</button></div>
+    </li>`).join('') : peopleEmpty('Du følger ingen utøvere ennå.');
+
+  document.getElementById('people-sent').innerHTML = sent.length ? sent.map(r => `
+    <li class="people-item">
+      <div class="people-item-main">
+        <div class="people-item-name">${escapeHtml(r.athlete_email)}</div>
+        <div class="people-item-sub">Venter på svar</div>
+      </div>
+      <div class="people-item-actions"><button class="text-btn" data-act="decline" data-id="${r.id}">Trekk tilbake</button></div>
+    </li>`).join('') : peopleEmpty('Ingen ventende forespørsler.');
+
+  updatePeopleBadge();
+}
+
+document.getElementById('view-people').addEventListener('click', async (e) => {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const act = el.dataset.act;
+  const status = document.getElementById('people-status');
+  try {
+    if (act === 'open-athlete') {
+      await openAthlete(peopleAthletes[Number(el.dataset.index)]);
+      return;
+    }
+    if (act === 'accept') {
+      const { error } = await supabase.rpc('accept_trainer_request', { p_id: el.dataset.id });
+      if (error) throw error;
+    } else if (act === 'decline') {
+      const { error } = await supabase.from('trainer_requests').delete().eq('id', el.dataset.id);
+      if (error) throw error;
+    } else if (act === 'remove-trainer' || act === 'unfollow') {
+      if (!confirm(act === 'unfollow' ? 'Slutte å følge denne utøveren?' : 'Fjerne trenerens tilgang til loggen din?')) return;
+      const { error } = await supabase.from('trainer_athletes').delete()
+        .eq('trainer_id', el.dataset.trainer).eq('athlete_id', el.dataset.athlete);
+      if (error) throw error;
+    }
+    status.textContent = '';
+    await loadPeople();
+  } catch (err) {
+    status.textContent = 'Noe gikk galt: ' + (err.message || err);
+  }
+});
+
+document.getElementById('people-send').addEventListener('click', async () => {
+  const input = document.getElementById('people-email');
+  const status = document.getElementById('people-status');
+  const email = input.value.trim();
+  if (!email) { status.textContent = 'Skriv inn e-postadressen til utøveren.'; return; }
+  status.className = 'scan-status';
+  const { error } = await supabase.rpc('send_trainer_request', { p_email: email });
+  if (error) { status.className = 'scan-status scan-warn'; status.textContent = error.message; return; }
+  input.value = '';
+  status.className = 'scan-status scan-ok';
+  status.textContent = `Forespørsel sendt til ${email}. Utøveren må godta den under «Trener» i appen.`;
+  await loadPeople();
+});
+
+document.getElementById('people-btn').addEventListener('click', async () => {
+  document.getElementById('people-status').textContent = '';
+  showView(viewPeople);
+  await loadPeople();
+});
+document.getElementById('back-people').addEventListener('click', () => showView(viewList));
+
+function updateViewAsUI() {
+  const on = !!viewAs;
+  document.getElementById('viewas-banner').hidden = !on;
+  document.getElementById('people-btn').hidden = on;
+  document.getElementById('fab-add').hidden = on;
+  document.querySelector('.profile-card').hidden = on;
+  if (on) {
+    document.getElementById('viewas-text').textContent =
+      `Du ser loggen til ${viewAs.name || viewAs.email} (kun lesing)`;
+  }
+}
+
+async function openAthlete(a) {
+  try {
+    const [s, p, m, d, g] = await Promise.all([
+      fetchSessions(a.id, false), fetchPhysicalSessions(a.id), fetchMentalSessions(a.id),
+      fetchDryfireSessions(a.id), fetchGoals(a.id)
+    ]);
+    sessions = s; physicalSessions = p; mentalSessions = m; dryfireSessions = d; goalsData = g;
+  } catch (e) {
+    alert('Kunne ikke hente utøverens logg. Har du kjørt schema_v6.sql i Supabase, og er forespørselen godkjent?');
+    return;
+  }
+  viewAs = a;
+  updateViewAsUI();
+  renderStats();
+  renderTypeStats();
+  showView(viewList);
+}
+
+async function exitViewAs() {
+  viewAs = null;
+  updateViewAsUI();
+  setFormReadOnly('view-physical-add', 'save-physical', 'delete-physical', false);
+  setFormReadOnly('view-mental-add', 'save-mental', 'delete-mental', false);
+  setFormReadOnly('view-dryfire-add', 'save-dryfire', 'delete-dryfire', false);
+  setGoalsReadOnly(false);
+  await refreshList();
+  showView(viewPeople);
+  await loadPeople();
+}
+document.getElementById('viewas-exit').addEventListener('click', exitViewAs);
 
 // ---- Init ----
 async function initAuth() {
@@ -1841,6 +2124,8 @@ document.getElementById('verify-otp').addEventListener('click', async () => {
 });
 
 document.getElementById('logout-btn').addEventListener('click', async () => {
+  viewAs = null;
+  updateViewAsUI();
   await supabase.auth.signOut();
 });
 
