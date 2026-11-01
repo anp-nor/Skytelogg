@@ -3,12 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#16171A">
+<meta name="theme-color" content="#0B0C0E">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Skytelogg">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 <title>Skytelogg</title>
 </head>
@@ -32,13 +35,19 @@
 <div id="app-shell" hidden>
 
 <header class="topbar">
+  <svg class="topbar-rings" width="420" height="420" viewBox="0 0 420 420" fill="none" stroke="#FF6B3D" aria-hidden="true">
+    <circle cx="210" cy="210" r="205" stroke-width="1"/><circle cx="210" cy="210" r="170" stroke-width="1"/>
+    <circle cx="210" cy="210" r="135" stroke-width="1"/><circle cx="210" cy="210" r="100" stroke-width="1"/>
+    <circle cx="210" cy="210" r="65" stroke-width="1"/><circle cx="210" cy="210" r="30" stroke-width="1"/>
+    <circle cx="210" cy="210" r="6" fill="#FF6B3D" stroke="none"/>
+  </svg>
+  <div class="topbar-actions">
+    <button class="text-btn text-btn-accent" id="people-btn">Trener</button>
+    <button class="text-btn" id="logout-btn">Logg ut</button>
+  </div>
   <div class="topbar-text">
     <h1>Skytelogg</h1>
     <div class="topbar-sub">Treningsdagbok for DFS-skyting</div>
-  </div>
-  <div class="topbar-actions">
-    <button class="text-btn" id="people-btn">Trener</button>
-    <button class="text-btn" id="logout-btn">Logg ut</button>
   </div>
 </header>
 
@@ -59,17 +68,17 @@
     </div>
   </div>
   <div class="stats-row" id="stats-row"></div>
-  <div class="section-label">Per øvelse</div>
+  <div class="section-label section-label-row"><span>Per øvelse</span><button class="text-btn text-btn-accent" id="type-stats-toggle" hidden>Vis alle</button></div>
   <ul id="type-stats-list" class="type-stats-list"></ul>
 </main>
 
-<button id="fab-add" class="fab" aria-label="Legg til trening">+</button>
+<button id="fab-add" class="fab" aria-label="Legg til trening"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
 
 <nav id="bottom-nav" class="bottom-nav">
-  <button class="bottom-nav-btn" id="nav-stats">Statistikk</button>
-  <button class="bottom-nav-btn" id="nav-calendar">Kalender</button>
-  <button class="bottom-nav-btn" id="nav-goals">Målsetninger</button>
-  <button class="bottom-nav-btn" id="nav-history">Tidligere økter</button>
+  <button class="bottom-nav-btn" id="nav-stats"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg><span>Statistikk</span></button>
+  <button class="bottom-nav-btn" id="nav-calendar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span>Kalender</span></button>
+  <button class="bottom-nav-btn" id="nav-goals"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg><span>Mål</span></button>
+  <button class="bottom-nav-btn" id="nav-history"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><span>Økter</span></button>
 </nav>
 
 <div id="add-menu" class="add-menu-overlay" hidden>
@@ -545,6 +554,7 @@
     <div class="subbar-title">Tidligere økter</div>
     <span></span>
   </header>
+  <div class="counter-row" id="history-counters"></div>
   <ul id="history-list" class="session-list"></ul>
   <div id="history-empty" class="empty-state" hidden>
     <p>Ingen økter registrert enda.</p>

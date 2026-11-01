@@ -374,7 +374,7 @@ function showView(view) {
   allViews.forEach(v => v.hidden = true);
   view.hidden = false;
   bottomNav.hidden = (view !== viewList);
-  document.getElementById('fab-add').hidden = !!viewAs || view === viewPeople;
+  document.getElementById('fab-add').hidden = !!viewAs || view !== viewList;
 }
 
 // ---- Rendering: list view ----
@@ -396,13 +396,14 @@ function renderStats() {
     sum + (g.achieved1 ? 1 : 0) + (g.achieved2 ? 1 : 0) + (g.achieved3 ? 1 : 0), 0);
   const totalShotsFired = sessions.reduce((sum, s) => sum + (Number(s.totalShotsFired) || 0), 0);
 
+  const pct = totalGoalSlots ? Math.round(achievedGoalSlots / totalGoalSlots * 100) : 0;
   statsRow.innerHTML = `
-    <div class="stat"><div class="stat-value">${sessions.length}</div><div class="stat-label">skyting</div></div>
-    <div class="stat"><div class="stat-value">${physicalSessions.length}</div><div class="stat-label">fysisk</div></div>
-    <div class="stat"><div class="stat-value">${mentalSessions.length}</div><div class="stat-label">mentalt</div></div>
-    <div class="stat"><div class="stat-value">${dryfireSessions.length}</div><div class="stat-label">tørrtrening</div></div>
-    <div class="stat"><div class="stat-value">${totalShotsFired}</div><div class="stat-label">skudd totalt</div></div>
-    <div class="stat"><div class="stat-value">${achievedGoalSlots}/${totalGoalSlots}</div><div class="stat-label">mål oppnådd</div></div>
+    <div class="stat stat-hero"><div class="stat-value">${totalShotsFired.toLocaleString('nb-NO')}</div><div class="stat-label">skudd totalt</div></div>
+    <div class="stat stat-goal">
+      <div class="stat-value">${achievedGoalSlots}<span class="dim">/${totalGoalSlots}</span></div>
+      <div class="stat-label">mål oppnådd</div>
+      <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
+    </div>
   `;
 }
 
@@ -426,30 +427,50 @@ function median(values) {
   return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
 }
 
+let showAllTypes = false;
+
 function renderTypeStats() {
   const wrap = document.getElementById('type-stats-list');
+  const toggle = document.getElementById('type-stats-toggle');
   const map = computeTypeStats(sessions);
-  const keys = Object.keys(map);
-  if (keys.length === 0) {
+  const latest = {};
+  sessions.forEach(s => {
+    const key = s.trainingType || 'Uten øvelse';
+    const t = new Date(s.date).getTime() || 0;
+    if (!(key in latest) || t > latest[key]) latest[key] = t;
+  });
+  const allKeys = Object.keys(map).sort((a, b) => latest[b] - latest[a]);
+  if (allKeys.length === 0) {
     wrap.innerHTML = '';
+    toggle.hidden = true;
     return;
   }
+  const keys = showAllTypes ? allKeys : allKeys.slice(0, 3);
+  toggle.hidden = allKeys.length <= 3;
+  toggle.textContent = showAllTypes ? 'Vis færre' : 'Vis alle';
   wrap.innerHTML = keys.map(key => {
     const { sum, count, best, totals, decimal } = map[key];
     const avg = sum / count;
     const med = median(totals);
     return `
-      <li class="type-stats-item">
-        <div class="type-stats-name">${key}</div>
-        <div class="type-stats-values">
-          <span>Beste: ${formatScore(best, decimal)}</span>
-          <span>Snitt: ${avg.toFixed(1)}</span>
-          <span>Median: ${med.toFixed(1)}</span>
+      <li class="type-stats-item" style="display:flex;align-items:center;gap:12px">
+        <div class="type-stats-main">
+          <div class="type-stats-name">${key}</div>
+          <div class="type-stats-sub">snitt ${avg.toFixed(1).replace('.', ',')} · median ${med.toFixed(1).replace('.', ',')}</div>
+        </div>
+        <div class="type-stats-best">
+          <div class="type-stats-best-value">${formatScore(best, decimal)}</div>
+          <div class="type-stats-best-label">BESTE</div>
         </div>
       </li>
     `;
   }).join('');
 }
+
+document.getElementById('type-stats-toggle').addEventListener('click', () => {
+  showAllTypes = !showAllTypes;
+  renderTypeStats();
+});
 
 function buildHistoryItems() {
   const items = [];
@@ -482,6 +503,13 @@ function renderHistoryList() {
   const emptyState = document.getElementById('history-empty');
   const items = buildHistoryItems();
 
+  document.getElementById('history-counters').innerHTML = [
+    ['Skyting', sessions.length, '#FF6B3D'],
+    ['Fysisk', physicalSessions.length, '#8FB573'],
+    ['Mentalt', mentalSessions.length, '#7A93B0'],
+    ['Tørrtrening', dryfireSessions.length, '#B07BB3']
+  ].map(([l, n, c]) => `<div class="counter"><div class="counter-value" style="color:${c}">${n}</div><div class="counter-label">${l}</div></div>`).join('');
+
   if (items.length === 0) {
     list.innerHTML = '';
     emptyState.hidden = false;
@@ -491,6 +519,7 @@ function renderHistoryList() {
 
   list.innerHTML = items.map((item, i) => `
     <li class="session-item" data-index="${i}">
+      <span class="session-dot" style="background:${{skyting: item.data && item.data.category === 'Konkurranse' ? '#F2C14E' : '#FF6B3D', fysisk: '#8FB573', mentalt: '#7A93B0', 'tørrtrening': '#B07BB3'}[item.kind]}"></span>
       <div class="session-item-main">
         <div class="session-program">${item.title}</div>
         <div class="session-meta">${formatDate(item.date)}${item.meta ? ' · ' + item.meta : ''}</div>
