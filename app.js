@@ -244,7 +244,7 @@ function programFlat(type, klasse) {
     else if (g === 'kne') series = [rep(L, 5), rep(K, 5), rep(L, 5), [...rep(K, 6), ...rep(L, 4)], rep(L, 10)];
     else series = [rep(L, 5), rep(L, 5), rep(L, 5), rep(L, 10), rep(L, 10)];
   } else if (matchN) {
-    if (g === 'stå') series = [rep(K, matchN), rep(S, matchN), rep(L, matchN)];
+    if (g === 'stå') series = [rep(L, matchN), rep(S, matchN), rep(K, matchN)];
     else if (g === 'kne') series = [rep(L, matchN), rep(K, matchN), rep(L, matchN)];
     else series = [rep(L, matchN), rep(L, matchN), rep(L, matchN)];
   } else if (type === 'Grunnlag') {
@@ -411,12 +411,19 @@ function computeTypeStats(sessionsArr) {
   sessionsArr.forEach(s => {
     const key = s.trainingType || 'Uten øvelse';
     const total = scoreTotal(s);
-    if (!map[key]) map[key] = { sum: 0, count: 0, best: -Infinity, decimal: s.trainingType === '60 ligg ISSF' };
+    if (!map[key]) map[key] = { sum: 0, count: 0, best: -Infinity, totals: [], decimal: s.trainingType === '60 ligg ISSF' };
+    map[key].totals.push(total);
     map[key].sum += total;
     map[key].count += 1;
     if (total > map[key].best) map[key].best = total;
   });
   return map;
+}
+
+function median(values) {
+  const v = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(v.length / 2);
+  return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
 }
 
 function renderTypeStats() {
@@ -428,14 +435,16 @@ function renderTypeStats() {
     return;
   }
   wrap.innerHTML = keys.map(key => {
-    const { sum, count, best, decimal } = map[key];
+    const { sum, count, best, totals, decimal } = map[key];
     const avg = sum / count;
+    const med = median(totals);
     return `
       <li class="type-stats-item">
         <div class="type-stats-name">${key}</div>
         <div class="type-stats-values">
           <span>Beste: ${formatScore(best, decimal)}</span>
           <span>Snitt: ${avg.toFixed(1)}</span>
+          <span>Median: ${med.toFixed(1)}</span>
         </div>
       </li>
     `;
