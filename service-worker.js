@@ -1,12 +1,12 @@
-const CACHE_NAME = 'riflelog-v31';
+const CACHE_NAME = 'riflelog-v32';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
   './app.js',
   './manifest.json',
-  './icon-180.png',
-  './icon-512.png'
+  './icon-180-v2.png',
+  './icon-512-v2.png'
 ];
 
 self.addEventListener('install', (event) => {
