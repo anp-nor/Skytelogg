@@ -79,6 +79,7 @@
   <button class="bottom-nav-btn" id="nav-calendar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span>Kalender</span></button>
   <button class="bottom-nav-btn" id="nav-goals"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg><span>Mål</span></button>
   <button class="bottom-nav-btn" id="nav-history"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><span>Økter</span></button>
+  <button class="bottom-nav-btn" id="nav-clock"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="14" r="7.5"/><path d="M12 14V9.5M9.5 2.5h5M12 2.5v4M18.5 6.5l1.3-1.3"/></svg><span>Klokke</span></button>
 </nav>
 
 <div id="add-menu" class="add-menu-overlay" hidden>
@@ -558,6 +559,66 @@
   <ul id="history-list" class="session-list"></ul>
   <div id="history-empty" class="empty-state" hidden>
     <p>Ingen økter registrert enda.</p>
+  </div>
+</main>
+
+<!-- Klokke -->
+<main id="view-clock" class="view" hidden>
+  <header class="subbar">
+    <button class="text-btn" id="back-clock">Tilbake</button>
+    <div class="subbar-title">Klokke</div>
+    <span></span>
+  </header>
+
+  <div id="clock-setup">
+    <div class="form-block">
+      <label class="field-label" for="clock-series">Serie</label>
+      <select id="clock-series" class="field-input"></select>
+    </div>
+    <div class="clock-display clock-idle" id="clock-idle-time">3:00</div>
+    <div class="clock-caption">skytetid</div>
+    <div class="field-label" style="margin-top:18px">Nedtelling før kommandoen starter</div>
+    <div class="chip-row" id="clock-delay-chips">
+      <button class="chip" data-delay="0">Ingen</button>
+      <button class="chip" data-delay="10">10 s</button>
+      <button class="chip" data-delay="30">30 s</button>
+      <button class="chip" data-delay="60">60 s</button>
+      <button class="chip" data-delay="custom">Egen</button>
+    </div>
+    <div class="clock-custom" id="clock-custom" hidden>
+      <input type="number" id="clock-custom-min" class="field-input" inputmode="numeric" min="0" max="59" value="0" aria-label="Minutter">
+      <span>min</span>
+      <input type="number" id="clock-custom-sec" class="field-input" inputmode="numeric" min="0" max="59" value="30" aria-label="Sekunder">
+      <span>sek</span>
+    </div>
+  </div>
+
+  <div id="clock-run" hidden>
+    <div class="clock-phase-wrap"><span class="clock-phase" id="clock-phase">VENTER</span></div>
+    <div class="clock-display" id="clock-time">0:00</div>
+    <div class="clock-caption" id="clock-caption"></div>
+    <div class="progress-track clock-progress"><div class="progress-fill" id="clock-progress" style="width:0%"></div></div>
+  </div>
+
+  <ul class="clock-steps" id="clock-steps"></ul>
+  <div id="clock-status" class="scan-status"></div>
+  <button id="clock-start" class="clock-btn">Start</button>
+
+  <div class="section-label">Skuddregistrering (test)</div>
+  <div class="listen-card">
+    <div class="listen-hint">Legg telefonen ved siden av deg med skjermen på. Smell registreres med tid. Hvis klokken går, regnes tiden fra «Ild».</div>
+    <div class="listen-meter"><div class="listen-meter-fill" id="listen-level"></div><div class="listen-meter-mark" id="listen-mark"></div></div>
+    <div class="listen-row">
+      <span class="listen-label">Følsomhet</span>
+      <input type="range" id="listen-sens" min="1" max="10" value="5">
+    </div>
+    <div class="listen-row">
+      <button id="listen-toggle" class="add-shot-btn">Start lytting</button>
+      <button id="listen-reset" class="text-btn">Nullstill</button>
+    </div>
+    <div id="listen-status" class="scan-status"></div>
+    <div id="listen-summary" class="listen-summary"></div>
+    <ul id="listen-list" class="listen-list"></ul>
   </div>
 </main>
 

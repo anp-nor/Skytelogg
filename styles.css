@@ -995,3 +995,44 @@ html, body { font-size: 16px; }
 }
 .bottom-nav-btn span { font-size: 10px; font-weight: 600; }
 .bottom-nav-btn:active { color: var(--brass); }
+
+/* ---- Klokke ---- */
+.clock-display { font-family: var(--mono); font-size: 84px; font-weight: 700; line-height: 1; letter-spacing: -0.05em; text-align: center; margin-top: 22px; }
+.clock-display.clock-idle { margin-top: 18px; }
+.clock-caption { text-align: center; font-size: 13px; color: var(--text-dim); margin-top: 8px; min-height: 16px; }
+.chip-row { display: flex; gap: 8px; }
+.chip { flex: 1; background: var(--bg-raised); color: var(--text); border: none; border-radius: 12px; padding: 10px 0; font-size: 14px; font-weight: 600; font-family: var(--sans); }
+.chip.on { background: var(--brass); color: #0B0C0E; }
+.clock-custom { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--text-dim); font-size: 14px; }
+.clock-custom .field-input { width: 76px; text-align: center; font-family: var(--mono); }
+.clock-custom[hidden], #clock-run[hidden], #clock-setup[hidden] { display: none; }
+.clock-phase-wrap { text-align: center; margin-top: 18px; }
+.clock-phase { display: inline-block; background: var(--bg-raised); color: var(--text); border-radius: 20px; padding: 6px 18px; font-size: 18px; font-weight: 700; letter-spacing: .04em; }
+.clock-phase.go { background: var(--brass); color: #0B0C0E; }
+#clock-run .clock-display { color: var(--text); }
+#clock-run.shooting .clock-display { color: var(--brass); }
+.clock-progress { height: 6px; margin: 18px 0 0; }
+.clock-progress .progress-fill { height: 6px; transition: width .2s linear; }
+.clock-steps { list-style: none; margin: 18px 0 0; padding: 14px 16px; background: var(--bg-raised); border-radius: 16px; font-size: 13px; line-height: 1.7; color: var(--text-dim); }
+.clock-steps li.done { text-decoration: line-through; }
+.clock-steps li.now { color: var(--brass); font-weight: 700; }
+.clock-btn { display: block; width: 100%; margin-top: 18px; background: var(--brass); color: #0B0C0E; border: none; border-radius: 18px; padding: 18px 0; font-size: 18px; font-weight: 700; font-family: var(--sans); }
+.clock-btn.stop { background: var(--bg-inner); color: var(--brass); border: 1px solid #5A2A1E; }
+
+/* ---- Skuddregistrering ---- */
+.listen-card { background: var(--bg-raised); border-radius: 16px; padding: 14px 16px; }
+.listen-hint { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+.listen-meter { position: relative; height: 10px; border-radius: 5px; background: var(--hairline); margin: 14px 0; overflow: hidden; }
+.listen-meter-fill { height: 100%; width: 0; background: var(--text-dim); border-radius: 5px; }
+.listen-meter-fill.hit { background: var(--brass); }
+.listen-meter-mark { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--brass); left: 50%; }
+.listen-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.listen-row input[type=range] { flex: 1; accent-color: var(--brass); }
+.listen-label { font-size: 13px; color: var(--text-dim); }
+.listen-summary { font-family: var(--mono); font-size: 13px; color: var(--text); margin: 6px 0; }
+.listen-list { list-style: none; margin: 0; padding: 0; }
+.listen-item { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--hairline); font-family: var(--mono); font-size: 14px; }
+.listen-item .n { width: 24px; color: var(--text-dim); }
+.listen-item .t { flex: 1; font-weight: 700; }
+.listen-item .d { color: var(--brass); }
+.listen-item .x { background: none; border: none; color: var(--text-dim); font-size: 16px; padding: 0 4px; }

@@ -367,12 +367,14 @@ const viewCalendar = document.getElementById('view-calendar');
 const viewGoals = document.getElementById('view-goals');
 const viewHistory = document.getElementById('view-history');
 const viewPeople = document.getElementById('view-people');
+const viewClock = document.getElementById('view-clock');
 const bottomNav = document.getElementById('bottom-nav');
-const allViews = [viewList, viewAdd, viewDetail, viewStats, viewPhysicalAdd, viewMentalAdd, viewDryfireAdd, viewCalendar, viewGoals, viewHistory, viewPeople];
+const allViews = [viewList, viewAdd, viewDetail, viewStats, viewPhysicalAdd, viewMentalAdd, viewDryfireAdd, viewCalendar, viewGoals, viewHistory, viewPeople, viewClock];
 
 function showView(view) {
   allViews.forEach(v => v.hidden = true);
   view.hidden = false;
+  if (view !== viewClock) { try { stopClock(); stopListen(); } catch (e) {} }
   bottomNav.hidden = (view !== viewList);
   document.getElementById('fab-add').hidden = !!viewAs || view !== viewList;
 }
@@ -2174,3 +2176,311 @@ document.getElementById('logout-btn').addEventListener('click', async () => {
     navigator.serviceWorker.register('service-worker.js').catch(() => {});
   }
 })();
+
+
+// ---- Klokke (kommandoer for skyting) ----
+const CLOCK_SERIES = [
+  { name: 'Prøveskudd', sec: 180 },
+  { name: '1. serie', sec: 120 },
+  { name: '2. serie', sec: 180 },
+  { name: '3. serie', sec: 120 },
+  { name: 'Grunnlag', sec: 180 },
+  { name: 'Omgang (75 s / 2 min / 3 min)', sec: 180, stops: [{ at: 75, say: '75 sekunder – stopp' }, { at: 120, say: '2 minutter – stopp' }] }
+];
+let clockDelay = 0;
+let clockTimer = null;
+let clockWake = null;
+let clockRun = null;
+
+function fmtClock(s) {
+  s = Math.max(0, Math.ceil(s - 1e-9));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+function clockSeries() { return CLOCK_SERIES[Number(document.getElementById('clock-series').value) || 0]; }
+
+function clockCustomSeconds() {
+  const m = Math.min(59, Math.max(0, parseInt(document.getElementById('clock-custom-min').value, 10) || 0));
+  const s = Math.min(59, Math.max(0, parseInt(document.getElementById('clock-custom-sec').value, 10) || 0));
+  return m * 60 + s;
+}
+
+function currentDelay() {
+  try { localStorage.setItem('clockDelay', String(clockDelay)); } catch (e) {}
+  return clockDelay === 'custom' ? clockCustomSeconds() : Number(clockDelay) || 0;
+}
+
+function renderClockSetup() {
+  const sel = document.getElementById('clock-series');
+  if (!sel.options.length) {
+    sel.innerHTML = CLOCK_SERIES.map((s, i) => `<option value="${i}">${s.name}</option>`).join('');
+    try {
+      const d = localStorage.getItem('clockDelay');
+      if (d !== null) clockDelay = d === 'custom' ? 'custom' : Number(d);
+      const si = localStorage.getItem('clockSeries');
+      if (si !== null && CLOCK_SERIES[Number(si)]) sel.value = si;
+    } catch (e) {}
+  }
+  document.getElementById('clock-idle-time').textContent = fmtClock(clockSeries().sec);
+  document.querySelectorAll('#clock-delay-chips .chip').forEach(c => {
+    c.classList.toggle('on', String(c.dataset.delay) === String(clockDelay));
+  });
+  document.getElementById('clock-custom').hidden = clockDelay !== 'custom';
+}
+
+function buildClockEvents(delay) {
+  const ser = clockSeries();
+  const ev = [];
+  let t = 0;
+  if (delay > 0) { ev.push({ t: 0, label: `Nedtelling ${fmtClock(delay)}`, phase: 'VENTER', end: delay }); t = delay; }
+  ev.push({ t, say: 'Klar kommer om 10 sekunder fra nå', label: '«Klar kommer om 10 sekunder fra nå»', phase: 'KLAR OM 10', end: t + 10 });
+  ev.push({ t: t + 10, say: 'Klar', label: '«Klar»', phase: 'KLAR', end: t + 15 });
+  const start = t + 15;
+  ev.push({ t: start, say: 'Ild', label: '«Ild» · skytetid ' + fmtClock(ser.sec), phase: 'ILD', end: start + ser.sec, shooting: true });
+  const total = start + ser.sec;
+  (ser.stops || []).forEach(st => ev.push({ t: start + st.at - 2, say: st.say, label: '«' + st.say + '»', mark: true }));
+  ev.push({ t: total - 2, say: 'Stans', label: '«Stans»', mark: true });
+  ev.sort((a, b) => a.t - b.t);
+  return { ev, start, total, secs: ser.sec };
+}
+
+let clockVoice = null;
+function pickVoice() {
+  if (!('speechSynthesis' in window)) return;
+  const vs = speechSynthesis.getVoices();
+  clockVoice = vs.find(v => /^nb/i.test(v.lang)) || vs.find(v => /^no/i.test(v.lang)) || vs.find(v => /^nn/i.test(v.lang)) || null;
+}
+if ('speechSynthesis' in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+
+function speak(text) {
+  if (!('speechSynthesis' in window)) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'nb-NO';
+  if (clockVoice) u.voice = clockVoice;
+  u.rate = 1;
+  u.volume = 1;
+  speechSynthesis.speak(u);
+}
+
+function renderClockSteps(now) {
+  const r = clockRun;
+  if (!r) { document.getElementById('clock-steps').innerHTML = ''; return; }
+  const items = r.plan.ev.filter(e => !e.phase || e.label);
+  const steps = [];
+  r.plan.ev.forEach(e => steps.push(e));
+  const doneIdx = steps.reduce((acc, e, i) => (e.t <= now ? i : acc), -1);
+  document.getElementById('clock-steps').innerHTML = steps.map((e, i) =>
+    `<li class="${i < doneIdx ? 'done' : (i === doneIdx ? 'now' : '')}">${e.label}</li>`).join('');
+}
+
+function clockTick() {
+  const r = clockRun;
+  if (!r) return;
+  const now = (Date.now() - r.t0) / 1000;
+  // Si kommandoer som er forfalt
+  while (r.next < r.plan.ev.length && r.plan.ev[r.next].t <= now) {
+    const e = r.plan.ev[r.next++];
+    if (e.say) speak(e.say);
+    renderClockSteps(now);
+  }
+  const { start, total, secs } = r.plan;
+  const phaseEv = r.plan.ev.filter(e => e.phase && e.t <= now && now < e.end).pop();
+  const run = document.getElementById('clock-run');
+  const ph = document.getElementById('clock-phase');
+  if (now >= total) { finishClock(); return; }
+  if (now < start) {
+    run.classList.remove('shooting');
+    ph.classList.remove('go');
+    ph.textContent = phaseEv ? phaseEv.phase : 'VENT';
+    document.getElementById('clock-time').textContent = fmtClock(phaseEv ? phaseEv.end - now : start - now);
+    document.getElementById('clock-caption').textContent = '';
+    document.getElementById('clock-progress').style.width = '0%';
+  } else {
+    run.classList.add('shooting');
+    ph.classList.add('go');
+    ph.textContent = 'ILD';
+    document.getElementById('clock-time').textContent = fmtClock(total - now);
+    document.getElementById('clock-caption').textContent = 'igjen av skytetiden';
+    document.getElementById('clock-progress').style.width = Math.min(100, (now - start) / secs * 100) + '%';
+  }
+}
+
+async function requestWake() {
+  try { if ('wakeLock' in navigator) clockWake = await navigator.wakeLock.request('screen'); } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => {
+  if ((clockRun || listenState) && document.visibilityState === 'visible') requestWake();
+});
+
+function startClock() {
+  if ('speechSynthesis' in window) { pickVoice(); speechSynthesis.cancel(); speak(' '); }
+  try { localStorage.setItem('clockSeries', document.getElementById('clock-series').value); } catch (e) {}
+  const plan = buildClockEvents(currentDelay());
+  clockRun = { t0: Date.now(), plan, next: 0 };
+  document.getElementById('clock-setup').hidden = true;
+  document.getElementById('clock-run').hidden = false;
+  document.getElementById('clock-status').textContent = 'speechSynthesis' in window ? '' : 'Telefonen støtter ikke stemme. Klokken går uten lyd.';
+  const btn = document.getElementById('clock-start');
+  btn.textContent = 'Avbryt';
+  btn.classList.add('stop');
+  requestWake();
+  renderClockSteps(0);
+  clockTick();
+  clockTimer = setInterval(clockTick, 100);
+}
+
+function endClockUI() {
+  clearInterval(clockTimer);
+  clockTimer = null;
+  clockRun = null;
+  if (!listenState) { try { if (clockWake) clockWake.release(); } catch (e) {} clockWake = null; }
+  const btn = document.getElementById('clock-start');
+  btn.textContent = 'Start';
+  btn.classList.remove('stop');
+  document.getElementById('clock-run').hidden = true;
+  document.getElementById('clock-run').classList.remove('shooting');
+  document.getElementById('clock-setup').hidden = false;
+  document.getElementById('clock-steps').innerHTML = '';
+}
+
+function finishClock() {
+  endClockUI();
+  document.getElementById('clock-status').textContent = 'Ferdig.';
+}
+
+function stopClock() {
+  if (!clockRun) return;
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  endClockUI();
+  document.getElementById('clock-status').textContent = '';
+}
+
+document.getElementById('nav-clock').addEventListener('click', () => {
+  renderClockSetup();
+  document.getElementById('clock-status').textContent = '';
+  showView(viewClock);
+});
+document.getElementById('back-clock').addEventListener('click', () => showView(viewList));
+document.getElementById('clock-start').addEventListener('click', () => { clockRun ? stopClock() : startClock(); });
+document.getElementById('clock-series').addEventListener('change', renderClockSetup);
+document.querySelectorAll('#clock-delay-chips .chip').forEach(c => c.addEventListener('click', () => {
+  clockDelay = c.dataset.delay === 'custom' ? 'custom' : Number(c.dataset.delay);
+  currentDelay();
+  renderClockSetup();
+}));
+
+
+// ---- Skuddregistrering via mikrofon (test) ----
+let listenState = null;   // { ctx, stream, analyser, buf, timer, t0, last, shots: [] }
+let listenShots = [];
+
+function listenThreshold() {
+  const s = Number(document.getElementById('listen-sens').value) || 5;
+  return 0.65 - (s - 1) * 0.06;   // 1 = lite følsom (0.65), 10 = veldig følsom (0.11)
+}
+
+function updateListenMark() {
+  document.getElementById('listen-mark').style.left = Math.min(100, listenThreshold() * 100) + '%';
+}
+
+function fmtTenths(sec) {
+  const s = Math.max(0, sec);
+  const m = Math.floor(s / 60);
+  return m + ':' + (s - m * 60).toFixed(1).padStart(4, '0');
+}
+
+function renderListenList() {
+  const list = document.getElementById('listen-list');
+  const sum = document.getElementById('listen-summary');
+  if (!listenShots.length) { list.innerHTML = ''; sum.textContent = ''; return; }
+  list.innerHTML = listenShots.map((s, i) => {
+    const prev = i > 0 ? listenShots[i - 1].t : null;
+    return `<li class="listen-item"><span class="n">${i + 1}</span><span class="t">${fmtTenths(s.t)}</span><span class="d">${prev === null ? '' : '+' + (s.t - prev).toFixed(1) + ' s'}</span><button class="x" data-i="${i}" aria-label="Fjern">✕</button></li>`;
+  }).join('');
+  const gaps = listenShots.slice(1).map((s, i) => s.t - listenShots[i].t);
+  const avg = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : null;
+  sum.textContent = `${listenShots.length} skudd` + (avg !== null ? ` · snitt ${avg.toFixed(1)} s mellom skuddene · totalt ${fmtTenths(listenShots[listenShots.length - 1].t - listenShots[0].t)}` : '');
+  list.querySelectorAll('.x').forEach(b => b.addEventListener('click', () => {
+    listenShots.splice(Number(b.dataset.i), 1);
+    renderListenList();
+  }));
+}
+
+function listenTick() {
+  const L = listenState;
+  if (!L) return;
+  L.analyser.getFloatTimeDomainData(L.buf);
+  let peak = 0;
+  for (let i = 0; i < L.buf.length; i++) { const a = Math.abs(L.buf[i]); if (a > peak) peak = a; }
+  const now = performance.now();
+  const fill = document.getElementById('listen-level');
+  const thr = listenThreshold();
+  fill.style.width = Math.min(100, peak * 100) + '%';
+  if (peak >= thr && now - L.last > 400) {
+    L.last = now;
+    // tid: fra «Ild» hvis klokken skyter, ellers fra første skudd i listen
+    let t;
+    if (clockRun && (Date.now() - clockRun.t0) / 1000 >= clockRun.plan.start) {
+      t = (Date.now() - clockRun.t0) / 1000 - clockRun.plan.start;
+    } else {
+      if (L.first === null) L.first = now;
+      t = (now - L.first) / 1000;
+    }
+    listenShots.push({ t });
+    renderListenList();
+    fill.classList.add('hit');
+    setTimeout(() => fill.classList.remove('hit'), 200);
+    try { if (navigator.vibrate) navigator.vibrate(30); } catch (e) {}
+  }
+}
+
+async function startListen() {
+  const status = document.getElementById('listen-status');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    status.textContent = 'Telefonen støtter ikke mikrofon i denne nettleseren.';
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx();
+    if (ctx.state === 'suspended') await ctx.resume();
+    const src = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0;
+    src.connect(analyser);
+    listenState = { ctx, stream, analyser, buf: new Float32Array(analyser.fftSize), last: -1e9, first: null, timer: null };
+    listenState.timer = setInterval(listenTick, 8);
+    document.getElementById('listen-toggle').textContent = 'Stopp lytting';
+    status.textContent = 'Lytter … Skyt et prøveskudd og se at stolpen slår ut.';
+    updateListenMark();
+    requestWake();
+  } catch (e) {
+    status.textContent = 'Fikk ikke tilgang til mikrofonen. Tillat den i innstillingene for nettleseren og prøv igjen.';
+  }
+}
+
+function stopListen() {
+  const L = listenState;
+  if (!L) return;
+  clearInterval(L.timer);
+  try { L.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+  try { L.ctx.close(); } catch (e) {}
+  listenState = null;
+  document.getElementById('listen-toggle').textContent = 'Start lytting';
+  document.getElementById('listen-level').style.width = '0%';
+  document.getElementById('listen-status').textContent = '';
+  if (!clockRun) { try { if (clockWake) clockWake.release(); } catch (e) {} clockWake = null; }
+}
+
+document.getElementById('listen-toggle').addEventListener('click', () => { listenState ? stopListen() : startListen(); });
+document.getElementById('listen-reset').addEventListener('click', () => {
+  listenShots = [];
+  if (listenState) listenState.first = null;
+  renderListenList();
+});
+document.getElementById('listen-sens').addEventListener('input', updateListenMark);
+updateListenMark();
