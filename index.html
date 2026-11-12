@@ -42,14 +42,25 @@
     <circle cx="210" cy="210" r="6" fill="#FF6B3D" stroke="none"/>
   </svg>
   <div class="topbar-actions">
-    <button class="text-btn text-btn-accent" id="people-btn">Trener</button>
-    <button class="text-btn" id="logout-btn">Logg ut</button>
+    <button class="clean-btn" id="clean-btn" aria-label="Pussing">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g transform="rotate(-45 12 12)"><path d="M1 12h11"/><rect x="12" y="8.5" width="10" height="7" rx="1.5"/><path d="M15 8.5v7M18 8.5v7"/></g></svg>
+      <span id="clean-count">–</span><span class="clean-dot" id="clean-dot" hidden></span>
+    </button>
+    <span class="topbar-actions-right">
+      <button class="text-btn text-btn-accent" id="people-btn">Trener</button>
+      <button class="text-btn" id="logout-btn">Logg ut</button>
+    </span>
   </div>
   <div class="topbar-text">
     <h1>Skytelogg</h1>
     <div class="topbar-sub">Treningsdagbok for DFS-skyting</div>
   </div>
 </header>
+
+<div id="clean-banner" class="clean-banner" hidden>
+  <div class="clean-banner-text"><div class="clean-banner-title">Tid for pussing</div><div class="clean-banner-sub" id="clean-banner-sub"></div></div>
+  <button class="clean-banner-btn" id="clean-banner-done">Pusset nå</button>
+</div>
 
 <div id="viewas-banner" class="viewas-banner" hidden>
   <span id="viewas-text"></span>
@@ -79,8 +90,36 @@
   <button class="bottom-nav-btn" id="nav-calendar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span>Kalender</span></button>
   <button class="bottom-nav-btn" id="nav-goals"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg><span>Mål</span></button>
   <button class="bottom-nav-btn" id="nav-history"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><span>Økter</span></button>
-  <button class="bottom-nav-btn" id="nav-clock"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="14" r="7.5"/><path d="M12 14V9.5M9.5 2.5h5M12 2.5v4M18.5 6.5l1.3-1.3"/></svg><span>Klokke</span></button>
+  <button class="bottom-nav-btn" id="nav-tools"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.1L3.5 17.2a1.8 1.8 0 0 0 2.6 2.6l5.8-5.8a4 4 0 0 0 5.1-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg><span>Hjelpemidler</span></button>
 </nav>
+
+<div id="clean-sheet" class="add-menu-overlay" hidden>
+  <div class="add-menu-box">
+    <div class="clean-sheet-title">Sist pusset</div>
+    <div class="clean-sheet-sub" id="clean-sheet-sub"></div>
+    <input type="date" id="clean-date" class="field-input">
+    <div class="field-label" style="margin:6px 0 0">Skudd på denne datoen</div>
+    <select id="clean-same-day" class="field-input">
+      <option value="1">Skutt etter pussing (telles med)</option>
+      <option value="0">Skutt før pussing (telles ikke)</option>
+    </select>
+    <div class="clean-sheet-actions">
+      <button class="add-menu-btn" id="clean-cancel">Avbryt</button>
+      <button class="add-shot-btn" id="clean-save">Lagre</button>
+    </div>
+  </div>
+</div>
+
+<div id="clean-alert" class="clean-alert-overlay" hidden>
+  <div class="clean-alert-box">
+    <div class="clean-sheet-title" id="clean-alert-title">250 skudd siden pussing</div>
+    <div class="clean-sheet-sub" id="clean-alert-text"></div>
+    <div class="clean-sheet-actions">
+      <button class="add-menu-btn" id="clean-alert-later">Senere</button>
+      <button class="add-shot-btn" id="clean-alert-done">Pusset nå</button>
+    </div>
+  </div>
+</div>
 
 <div id="add-menu" class="add-menu-overlay" hidden>
   <div class="add-menu-box">
@@ -275,6 +314,30 @@
   </header>
 
   <div class="filter-row">
+    <select id="stats-kategori" class="field-input">
+      <option value="skyting">Skyting</option>
+      <option value="fysisk">Fysisk</option>
+      <option value="mentalt">Mentalt</option>
+      <option value="tørrtrening">Tørrtrening</option>
+    </select>
+    <select id="stats-period" class="field-input">
+      <option value="sesong">Sesong</option>
+      <option value="alt">Alt</option>
+      <option value="denne">Denne måneden</option>
+      <option value="forrige">Forrige måned</option>
+      <option value="30">Siste 30 dager</option>
+    </select>
+  </div>
+
+  <div id="stats-other" hidden>
+    <div id="stats-other-total" class="other-total"></div>
+    <div class="section-label">Per type</div>
+    <ul id="stats-other-list" class="type-stats-list"></ul>
+    <div id="stats-other-empty" class="empty-state" hidden><p>Ingen økter i perioden.</p></div>
+  </div>
+
+  <div id="stats-shooting">
+  <div class="filter-row">
     <select id="filter-category" class="field-input">
       <option value="">Alle typer</option>
       <option value="Trening">Trening</option>
@@ -313,6 +376,7 @@
       </thead>
       <tbody id="stats-table-body"></tbody>
     </table>
+  </div>
   </div>
 </main>
 
@@ -562,6 +626,135 @@
   </div>
 </main>
 
+<!-- Hjelpemidler -->
+<main id="view-tools" class="view" hidden>
+  <header class="subbar">
+    <button class="text-btn" id="back-tools">Tilbake</button>
+    <div class="subbar-title">Hjelpemidler</div>
+    <span></span>
+  </header>
+  <div class="tools-list">
+    <button class="tools-item" id="tool-clock"><span>Klokke</span><span class="tools-arrow">›</span></button>
+    <button class="tools-item" id="tool-clean" data-own><span>Puss av våpen</span><span class="tools-arrow">›</span></button>
+    <button class="tools-item" id="tool-points" data-own><span>Kontrollpunkter</span><span class="tools-arrow">›</span></button>
+    <button class="tools-item" id="tool-torque" data-own><span>Moment våpen</span><span class="tools-arrow">›</span></button>
+    <button class="tools-item" id="tool-visual" data-own><span>Visualisering</span><span class="tools-arrow">›</span></button>
+    <a class="tools-item" id="tool-ranges" href="https://skytebaneguide.no/" target="_blank" rel="noopener"><span>Skytebaneguide</span><span class="tools-arrow">↗</span></a>
+    <a class="tools-item" id="tool-book" href="https://issuu.com/dfs.no/docs/skytterboka_2027" target="_blank" rel="noopener"><span>Skytterboka</span><span class="tools-arrow">↗</span></a>
+  </div>
+</main>
+
+<!-- Puss av våpen -->
+<main id="view-clean" class="view" hidden>
+  <header class="subbar">
+    <button class="text-btn" id="back-clean">Tilbake</button>
+    <div class="subbar-title">Puss av våpen</div>
+    <span></span>
+  </header>
+  <div class="clean-hero">
+    <div class="clean-hero-num" id="clean-hero-num">–</div>
+    <div class="clean-hero-label">skudd siden pussing</div>
+    <div class="progress-track clean-progress"><div class="progress-fill" id="clean-progress" style="width:0%"></div></div>
+    <div class="clean-hero-sub" id="clean-hero-sub"></div>
+  </div>
+  <button class="clock-btn" id="clean-add">Legg inn nytt puss</button>
+  <div class="section-label">Tidligere puss</div>
+  <ul id="clean-history" class="people-list"></ul>
+</main>
+
+<!-- Kontrollpunkter -->
+<main id="view-points" class="view" hidden>
+  <header class="subbar">
+    <button class="text-btn" id="back-points">Tilbake</button>
+    <div class="subbar-title">Kontrollpunkter</div>
+    <span></span>
+  </header>
+  <div id="points-note" class="scan-status"></div>
+  <div id="points-body"></div>
+</main>
+
+<!-- Moment våpen -->
+<main id="view-torque" class="view" hidden>
+  <header class="subbar">
+    <button class="text-btn" id="back-torque">Tilbake</button>
+    <div class="subbar-title">Moment våpen</div>
+    <span></span>
+  </header>
+  <div class="form-block">
+    <label class="field-label" for="torque-season">Våpen</label>
+    <select id="torque-season" class="field-input"></select>
+  </div>
+  <div class="torque-row">
+    <div class="form-block">
+      <label class="field-label" for="torque-front">Moment fremre (Nm)</label>
+      <input type="number" id="torque-front" class="field-input" step="0.1" min="0" inputmode="decimal" placeholder="0,0">
+    </div>
+    <div class="form-block">
+      <label class="field-label" for="torque-rear">Moment bakre (Nm)</label>
+      <input type="number" id="torque-rear" class="field-input" step="0.1" min="0" inputmode="decimal" placeholder="0,0">
+    </div>
+  </div>
+  <div class="form-block">
+    <label class="field-label" for="torque-date">Dato for testing</label>
+    <input type="date" id="torque-date" class="field-input">
+  </div>
+  <button class="clock-btn" id="torque-save">Legg til</button>
+  <div class="section-label">Tidligere målinger</div>
+  <ul id="torque-list" class="people-list"></ul>
+</main>
+
+<!-- Visualisering -->
+<main id="view-visual" class="view" hidden>
+  <header class="subbar">
+    <button class="text-btn" id="back-visual">Tilbake</button>
+    <div class="subbar-title">Visualisering</div>
+    <span></span>
+  </header>
+  <div id="vis-setup">
+    <div class="form-block">
+      <label class="field-label" for="vis-alt">Program</label>
+      <select id="vis-alt" class="field-input">
+        <option value="a1">15 meter alt. 1</option>
+        <option value="a2">15 meter alt. 2</option>
+        <option value="m100">100 meter</option>
+        <option value="m200">200–300 meter</option>
+      </select>
+    </div>
+    <div class="form-block">
+      <label class="field-label" for="vis-part">Del</label>
+      <select id="vis-part" class="field-input">
+        <option value="all">Hele programmet</option>
+        <option value="prove">Prøve</option>
+        <option value="s1">Serie 1</option>
+        <option value="s2">Serie 2</option>
+        <option value="s3">Serie 3</option>
+        <option value="t10">10-skudd</option>
+        <option value="omg">Omgang</option>
+      </select>
+    </div>
+    <label class="center-ten-label"><input type="checkbox" id="vis-tone"> Kort tone før hver kommando</label>
+    <div class="voice-controls">
+    <div class="field-label" style="margin-top:14px">Stemme</div>
+    <select class="voice-select field-input"></select>
+    <div class="voice-row">
+      <span class="listen-label">Tempo</span>
+      <input type="range" class="voice-rate" min="0.7" max="1.2" step="0.05" value="0.95">
+      <span class="voice-rate-val">0,95×</span>
+      <button class="text-btn text-btn-accent voice-test">Test</button>
+    </div>
+    <div class="voice-hint">For en mer naturlig stemme på iPhone: Innstillinger, Tilgjengelighet, Opplest innhold, Stemmer, Norsk. Last ned en «Forbedret» eller «Premium»-stemme, og velg den her (merket ★).</div>
+  </div>
+
+    <div class="clock-caption" style="margin-top:14px">Standplasslederen leser kommandoene i rekkefølge. Mens serien pågår, visualiserer du skytingen.</div>
+  </div>
+  <div id="vis-run" class="vis-run" hidden>
+    <div class="vis-run-title">Visualiser skytingen</div>
+    <div class="vis-run-sub">Lytt til kommandoene. Skjermen holdes på.</div>
+  </div>
+  <div id="vis-status" class="scan-status"></div>
+  <button id="vis-start" class="clock-btn">Start</button>
+</main>
+
 <!-- Klokke -->
 <main id="view-clock" class="view" hidden>
   <header class="subbar">
@@ -600,6 +793,17 @@
     <div class="progress-track clock-progress"><div class="progress-fill" id="clock-progress" style="width:0%"></div></div>
   </div>
 
+<div class="voice-controls">
+    <div class="field-label" style="margin-top:18px">Stemme</div>
+    <select class="voice-select field-input"></select>
+    <div class="voice-row">
+      <span class="listen-label">Tempo</span>
+      <input type="range" class="voice-rate" min="0.7" max="1.2" step="0.05" value="0.95">
+      <span class="voice-rate-val">0,95×</span>
+      <button class="text-btn text-btn-accent voice-test">Test</button>
+    </div>
+    <div class="voice-hint">For en mer naturlig stemme på iPhone: Innstillinger, Tilgjengelighet, Opplest innhold, Stemmer, Norsk. Last ned en «Forbedret» eller «Premium»-stemme, og velg den her (merket ★).</div>
+  </div>
   <ul class="clock-steps" id="clock-steps"></ul>
   <div id="clock-status" class="scan-status"></div>
   <button id="clock-start" class="clock-btn">Start</button>
@@ -610,7 +814,7 @@
     <div class="listen-meter"><div class="listen-meter-fill" id="listen-level"></div><div class="listen-meter-mark" id="listen-mark"></div></div>
     <div class="listen-row">
       <span class="listen-label">Følsomhet</span>
-      <input type="range" id="listen-sens" min="1" max="10" value="5">
+      <input type="range" id="listen-sens" min="1" max="10" value="3">
     </div>
     <div class="listen-row">
       <button id="listen-toggle" class="add-shot-btn">Start lytting</button>

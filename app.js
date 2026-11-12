@@ -204,6 +204,7 @@ let physicalSessions = [];
 let mentalSessions = [];
 let dryfireSessions = [];
 let goalsData = [];
+let cleanings = [];
 let draftShots = [];
 let draftImages = [];
 let currentDetailId = null;
@@ -368,13 +369,19 @@ const viewGoals = document.getElementById('view-goals');
 const viewHistory = document.getElementById('view-history');
 const viewPeople = document.getElementById('view-people');
 const viewClock = document.getElementById('view-clock');
+const viewTools = document.getElementById('view-tools');
+const viewClean = document.getElementById('view-clean');
+const viewPoints = document.getElementById('view-points');
+const viewTorque = document.getElementById('view-torque');
+const viewVisual = document.getElementById('view-visual');
 const bottomNav = document.getElementById('bottom-nav');
-const allViews = [viewList, viewAdd, viewDetail, viewStats, viewPhysicalAdd, viewMentalAdd, viewDryfireAdd, viewCalendar, viewGoals, viewHistory, viewPeople, viewClock];
+const allViews = [viewList, viewAdd, viewDetail, viewStats, viewPhysicalAdd, viewMentalAdd, viewDryfireAdd, viewCalendar, viewGoals, viewHistory, viewPeople, viewClock, viewTools, viewClean, viewPoints, viewTorque, viewVisual];
 
 function showView(view) {
   allViews.forEach(v => v.hidden = true);
   view.hidden = false;
   if (view !== viewClock) { try { stopClock(); stopListen(); } catch (e) {} }
+  if (view !== viewVisual) { try { stopVis(); } catch (e) {} }
   bottomNav.hidden = (view !== viewList);
   document.getElementById('fab-add').hidden = !!viewAs || view !== viewList;
 }
@@ -392,6 +399,7 @@ function sessionTitle(session) {
 }
 
 function renderStats() {
+  updateCleanUI();
   const statsRow = document.getElementById('stats-row');
   const totalGoalSlots = goalsData.length * 3;
   const achievedGoalSlots = goalsData.reduce((sum, g) =>
@@ -586,6 +594,11 @@ async function refreshList() {
     mentalSessions = await fetchMentalSessions();
   } catch (err) {
     console.error('Kunne ikke hente mental trening', err);
+  }
+  try {
+    cleanings = await fetchCleanings();
+  } catch (err) {
+    console.error('Kunne ikke hente pussing', err);
   }
   try {
     goalsData = await fetchGoals();
@@ -1207,10 +1220,12 @@ document.getElementById('save-session').addEventListener('click', async () => {
     }
   } else {
     try {
+      const before = cleanStep();
       await insertSession(session);
       editingId = null;
       await refreshList();
       showView(viewList);
+      if (cleanStep() > before) showCleanAlert();
     } catch (err) {
       alert('Kunne ikke lagre økten. Sjekk nettforbindelsen og prøv igjen.');
     }
@@ -1293,7 +1308,7 @@ document.getElementById('nav-stats').addEventListener('click', () => {
 
 document.getElementById('back-stats').addEventListener('click', () => showView(viewList));
 
-['filter-category', 'filter-type'].forEach(id => {
+['filter-category', 'filter-type', 'stats-kategori', 'stats-period'].forEach(id => {
   document.getElementById(id).addEventListener('change', renderStatsPage);
 });
 
@@ -1302,16 +1317,68 @@ function shortDateLabel(iso) {
   return d.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' });
 }
 
+function inPeriod(item) {
+  const p = document.getElementById('stats-period').value;
+  if (p === 'alt') return true;
+  if (p === 'sesong') return !item.season || item.season === SEASONS[SEASONS.length - 1];
+  const d = new Date(item.date);
+  if (isNaN(d)) return false;
+  const now = new Date();
+  if (p === 'denne') return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  if (p === 'forrige') {
+    const f = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return d.getFullYear() === f.getFullYear() && d.getMonth() === f.getMonth();
+  }
+  if (p === '30') return (now - d) / 86400000 <= 30 && d <= now;
+  return true;
+}
+
 function getFilteredSessions() {
   const category = document.getElementById('filter-category').value;
   const type = document.getElementById('filter-type').value;
   return sessions.filter(s =>
     (!category || s.category === category) &&
-    (!type || s.trainingType === type)
+    (!type || s.trainingType === type) &&
+    inPeriod(s)
   );
 }
 
+function renderOtherStats(kat) {
+  const arr = kat === 'fysisk' ? physicalSessions : kat === 'mentalt' ? mentalSessions : dryfireSessions;
+  const rows = arr.filter(inPeriod);
+  const map = {};
+  rows.forEach(r => {
+    const key = r.type || 'Uten type';
+    if (!map[key]) map[key] = { n: 0, min: 0, shots: 0 };
+    map[key].n += 1;
+    map[key].min += Number(r.duration_minutes) || 0;
+    map[key].shots += Number(r.shot_count) || 0;
+  });
+  const isDry = kat === 'tørrtrening';
+  const totN = rows.length;
+  const totMin = Object.values(map).reduce((a, m) => a + m.min, 0);
+  const totShots = Object.values(map).reduce((a, m) => a + m.shots, 0);
+  const box = (v, l) => `<div class="stat-box"><div class="stat-box-value">${v}</div><div class="stat-box-label">${l}</div></div>`;
+  document.getElementById('stats-other-total').innerHTML =
+    box(totN, 'økter') + box(totMin, 'minutter') + (isDry ? box(totShots, 'skudd') : '');
+  const keys = Object.keys(map).sort((a, b) => map[b].min - map[a].min);
+  document.getElementById('stats-other-empty').hidden = keys.length > 0;
+  document.getElementById('stats-other-list').innerHTML = keys.map(k => {
+    const m = map[k];
+    return `<li class="type-stats-item" style="display:flex;align-items:center;gap:12px">
+      <div class="type-stats-main"><div class="type-stats-name">${k}</div>
+      <div class="type-stats-sub">${m.n} ${m.n === 1 ? 'økt' : 'økter'}${isDry ? ' · ' + m.shots + ' skudd' : ''}</div></div>
+      <div class="type-stats-best"><div class="type-stats-best-value">${m.min}</div><div class="type-stats-best-label">MINUTTER</div></div>
+    </li>`;
+  }).join('');
+}
+
 function renderStatsPage() {
+  const kat = document.getElementById('stats-kategori').value;
+  const isShoot = kat === 'skyting';
+  document.getElementById('stats-shooting').hidden = !isShoot;
+  document.getElementById('stats-other').hidden = isShoot;
+  if (!isShoot) { renderOtherStats(kat); return; }
   const filtered = getFilteredSessions().slice().sort((a, b) => new Date(a.date) - new Date(b.date));
   const emptyEl = document.getElementById('stats-empty');
   const canvas = document.getElementById('stats-chart');
@@ -1370,7 +1437,7 @@ function drawLineChart(canvas, points) {
   const xFor = (i) => paddingLeft + (points.length === 1 ? plotWidth / 2 : (i / (points.length - 1)) * plotWidth);
   const yFor = (v) => paddingTop + plotHeight - ((v - minVal) / (maxVal - minVal)) * plotHeight;
 
-  ctx.strokeStyle = '#2C2E33';
+  ctx.strokeStyle = '#25272B';
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(paddingLeft, paddingTop);
@@ -1378,13 +1445,13 @@ function drawLineChart(canvas, points) {
   ctx.lineTo(paddingLeft + plotWidth, paddingTop + plotHeight);
   ctx.stroke();
 
-  ctx.fillStyle = '#8B8D92';
+  ctx.fillStyle = '#8A8780';
   ctx.font = '10px -apple-system, sans-serif';
   ctx.textAlign = 'right';
   ctx.fillText(maxVal.toFixed(0), paddingLeft - 6, paddingTop + 4);
   ctx.fillText(minVal.toFixed(0), paddingLeft - 6, paddingTop + plotHeight);
 
-  ctx.strokeStyle = '#B08D57';
+  ctx.strokeStyle = '#FF6B3D';
   ctx.lineWidth = 2;
   ctx.beginPath();
   points.forEach((p, i) => {
@@ -1394,7 +1461,7 @@ function drawLineChart(canvas, points) {
   });
   ctx.stroke();
 
-  ctx.fillStyle = '#B08D57';
+  ctx.fillStyle = '#FF6B3D';
   points.forEach((p, i) => {
     const x = xFor(i);
     const y = yFor(p.value);
@@ -1403,7 +1470,7 @@ function drawLineChart(canvas, points) {
     ctx.fill();
   });
 
-  ctx.fillStyle = '#8B8D92';
+  ctx.fillStyle = '#8A8780';
   ctx.textAlign = 'center';
   const labelIndices = points.length <= 5
     ? points.map((_, i) => i)
@@ -2068,6 +2135,8 @@ function updateViewAsUI() {
   const on = !!viewAs;
   document.getElementById('viewas-banner').hidden = !on;
   document.getElementById('people-btn').hidden = on;
+  document.getElementById('clean-btn').hidden = on;
+  if (on) document.getElementById('clean-banner').hidden = true; else updateCleanUI();
   document.getElementById('fab-add').hidden = on;
   document.querySelector('.profile-card').hidden = on;
   if (on) {
@@ -2234,9 +2303,9 @@ function buildClockEvents(delay) {
   let t = 0;
   if (delay > 0) { ev.push({ t: 0, label: `Nedtelling ${fmtClock(delay)}`, phase: 'VENTER', end: delay }); t = delay; }
   ev.push({ t, say: 'Klar kommer om 10 sekunder fra nå', label: '«Klar kommer om 10 sekunder fra nå»', phase: 'KLAR OM 10', end: t + 10 });
-  ev.push({ t: t + 10, say: 'Klar', label: '«Klar»', phase: 'KLAR', end: t + 15 });
+  ev.push({ t: t + 10, say: 'Klar', firm: true, label: '«Klar»', phase: 'KLAR', end: t + 15 });
   const start = t + 15;
-  ev.push({ t: start, say: 'Ild', label: '«Ild» · skytetid ' + fmtClock(ser.sec), phase: 'ILD', end: start + ser.sec, shooting: true });
+  ev.push({ t: start, say: 'Ild', firm: true, label: '«Ild» · skytetid ' + fmtClock(ser.sec), phase: 'ILD', end: start + ser.sec, shooting: true });
   const total = start + ser.sec;
   (ser.stops || []).forEach(st => ev.push({ t: start + st.at - 2, say: st.say, label: '«' + st.say + '»', mark: true }));
   ev.push({ t: total - 2, say: 'Stans', label: '«Stans»', mark: true });
@@ -2245,22 +2314,85 @@ function buildClockEvents(delay) {
 }
 
 let clockVoice = null;
+let voiceRate = 0.95;
+let voiceName = '';
+try {
+  voiceName = localStorage.getItem('voiceName') || '';
+  const r = parseFloat(localStorage.getItem('voiceRate'));
+  if (r >= 0.7 && r <= 1.2) voiceRate = r;
+} catch (e) {}
+
+function norwegianVoices() {
+  if (!('speechSynthesis' in window)) return [];
+  return speechSynthesis.getVoices().filter(v => /^(nb|no|nn)/i.test(v.lang));
+}
+
+function voiceScore(v) {
+  // Foretrekk forbedrede/premium-stemmer, de låter mest naturlige
+  const n = (v.name || '').toLowerCase();
+  let s = 0;
+  if (/premium|enhanced|forbedret|natural|neural/.test(n)) s += 10;
+  if (/^nb/i.test(v.lang)) s += 2;
+  if (!v.localService) s += 1;
+  return s;
+}
+
 function pickVoice() {
   if (!('speechSynthesis' in window)) return;
-  const vs = speechSynthesis.getVoices();
-  clockVoice = vs.find(v => /^nb/i.test(v.lang)) || vs.find(v => /^no/i.test(v.lang)) || vs.find(v => /^nn/i.test(v.lang)) || null;
+  const vs = norwegianVoices();
+  clockVoice = vs.find(v => v.name === voiceName) || vs.slice().sort((a, b) => voiceScore(b) - voiceScore(a))[0] || null;
+  renderVoiceControls();
 }
 if ('speechSynthesis' in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
 
-function speak(text) {
-  if (!('speechSynthesis' in window)) return;
+// Ordet «firm» brukes for korte kommandoer (Klar, Ild, Stans): litt lavere og saktere
+function makeUtterance(text, firm) {
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'nb-NO';
   if (clockVoice) u.voice = clockVoice;
-  u.rate = 1;
+  u.rate = firm ? Math.max(0.7, voiceRate * 0.92) : voiceRate;
+  u.pitch = firm ? 0.9 : 1;
   u.volume = 1;
-  speechSynthesis.speak(u);
+  return u;
 }
+
+function speak(text, firm) {
+  if (!('speechSynthesis' in window)) return;
+  speechSynthesis.speak(makeUtterance(text, firm));
+}
+
+function renderVoiceControls() {
+  document.querySelectorAll('.voice-controls').forEach(box => {
+    const vs = norwegianVoices();
+    const sel = box.querySelector('.voice-select');
+    const rate = box.querySelector('.voice-rate');
+    sel.innerHTML = vs.length
+      ? vs.map(v => `<option value="${escAttr(v.name)}">${v.name}${/premium|enhanced|forbedret/i.test(v.name) ? ' ★' : ''}</option>`).join('')
+      : '<option value="">Ingen norsk stemme funnet</option>';
+    if (clockVoice) sel.value = clockVoice.name;
+    rate.value = String(voiceRate);
+    box.querySelector('.voice-rate-val').textContent = voiceRate.toFixed(2).replace('.', ',') + '×';
+  });
+}
+
+document.querySelectorAll('.voice-controls').forEach(box => {
+  box.querySelector('.voice-select').addEventListener('change', e => {
+    voiceName = e.target.value;
+    try { localStorage.setItem('voiceName', voiceName); } catch (er) {}
+    pickVoice();
+  });
+  box.querySelector('.voice-rate').addEventListener('input', e => {
+    voiceRate = parseFloat(e.target.value) || 0.95;
+    try { localStorage.setItem('voiceRate', String(voiceRate)); } catch (er) {}
+    box.querySelector('.voice-rate-val').textContent = voiceRate.toFixed(2).replace('.', ',') + '×';
+  });
+  box.querySelector('.voice-test').addEventListener('click', () => {
+    if (!('speechSynthesis' in window)) return;
+    speechSynthesis.cancel();
+    speak('Skytterne får to minutter til lading og klargjøring fra nå.');
+    speak('Klar!', true);
+  });
+});
 
 function renderClockSteps(now) {
   const r = clockRun;
@@ -2280,7 +2412,7 @@ function clockTick() {
   // Si kommandoer som er forfalt
   while (r.next < r.plan.ev.length && r.plan.ev[r.next].t <= now) {
     const e = r.plan.ev[r.next++];
-    if (e.say) speak(e.say);
+    if (e.say) speak(e.say, !!e.firm || /stans|stopp/i.test(e.say));
     renderClockSteps(now);
   }
   const { start, total, secs } = r.plan;
@@ -2355,12 +2487,17 @@ function stopClock() {
   document.getElementById('clock-status').textContent = '';
 }
 
-document.getElementById('nav-clock').addEventListener('click', () => {
+document.getElementById('nav-tools').addEventListener('click', () => {
+  document.querySelectorAll('#view-tools [data-own]').forEach(el => { el.hidden = !!viewAs; });
+  showView(viewTools);
+});
+document.getElementById('back-tools').addEventListener('click', () => showView(viewList));
+document.getElementById('tool-clock').addEventListener('click', () => {
   renderClockSetup();
   document.getElementById('clock-status').textContent = '';
   showView(viewClock);
 });
-document.getElementById('back-clock').addEventListener('click', () => showView(viewList));
+document.getElementById('back-clock').addEventListener('click', () => showView(viewTools));
 document.getElementById('clock-start').addEventListener('click', () => { clockRun ? stopClock() : startClock(); });
 document.getElementById('clock-series').addEventListener('change', renderClockSetup);
 document.querySelectorAll('#clock-delay-chips .chip').forEach(c => c.addEventListener('click', () => {
@@ -2376,7 +2513,7 @@ let listenShots = [];
 
 function listenThreshold() {
   const s = Number(document.getElementById('listen-sens').value) || 5;
-  return 0.65 - (s - 1) * 0.06;   // 1 = lite følsom (0.65), 10 = veldig følsom (0.11)
+  return 0.92 - (s - 1) * 0.07;   // 1 = lite følsom (0.92), 10 = veldig følsom (0.29)
 }
 
 function updateListenMark() {
@@ -2410,14 +2547,25 @@ function listenTick() {
   const L = listenState;
   if (!L) return;
   L.analyser.getFloatTimeDomainData(L.buf);
-  let peak = 0;
-  for (let i = 0; i < L.buf.length; i++) { const a = Math.abs(L.buf[i]); if (a > peak) peak = a; }
+  let peak = 0, sq = 0;
+  for (let i = 0; i < L.buf.length; i++) { const v = L.buf[i]; const a = Math.abs(v); if (a > peak) peak = a; sq += v * v; }
+  const rms = Math.sqrt(sq / L.buf.length);
   const now = performance.now();
   const fill = document.getElementById('listen-level');
   const thr = listenThreshold();
   fill.style.width = Math.min(100, peak * 100) + '%';
-  if (peak >= thr && now - L.last > 400) {
+  // Skudd: høyt topp-nivå OG nok energi over ca. 46 ms (klikk fra ladegrep o.l. har lite energi)
+  const rmsThr = thr * 0.22;
+  const loud = peak >= thr && rms >= rmsThr && rms >= L.noise * 6;
+  if (!loud) L.noise = L.noise * 0.98 + rms * 0.02;
+  if (!loud && peak >= thr && now - (L.rej || 0) > 500) {
+    L.rej = now;
+    document.getElementById('listen-status').textContent = `Ignorert: kort/svakt lyd (topp ${peak.toFixed(2)}, kraft ${rms.toFixed(3)}, krever kraft ${rmsThr.toFixed(3)})`;
+  }
+  if (loud && now - L.last > 800) {
     L.last = now;
+    document.getElementById('listen-status').textContent =
+      `Siste smell: topp ${peak.toFixed(2)}, kraft ${rms.toFixed(3)} (krever topp ${thr.toFixed(2)}, kraft ${rmsThr.toFixed(3)})`;
     // tid: fra «Ild» hvis klokken skyter, ellers fra første skudd i listen
     let t;
     if (clockRun && (Date.now() - clockRun.t0) / 1000 >= clockRun.plan.start) {
@@ -2449,13 +2597,13 @@ async function startListen() {
     if (ctx.state === 'suspended') await ctx.resume();
     const src = ctx.createMediaStreamSource(stream);
     const analyser = ctx.createAnalyser();
-    analyser.fftSize = 512;
+    analyser.fftSize = 2048;
     analyser.smoothingTimeConstant = 0;
     src.connect(analyser);
-    listenState = { ctx, stream, analyser, buf: new Float32Array(analyser.fftSize), last: -1e9, first: null, timer: null };
-    listenState.timer = setInterval(listenTick, 8);
+    listenState = { ctx, stream, analyser, buf: new Float32Array(analyser.fftSize), last: -1e9, first: null, timer: null, noise: 0.002 };
+    listenState.timer = setInterval(listenTick, 10);
     document.getElementById('listen-toggle').textContent = 'Stopp lytting';
-    status.textContent = 'Lytter … Skyt et prøveskudd og se at stolpen slår ut.';
+    status.textContent = 'Lytter … Skyt et prøveskudd. Etter hvert smell vises topp og kraft, så du kan justere.';
     updateListenMark();
     requestWake();
   } catch (e) {
@@ -2484,3 +2632,494 @@ document.getElementById('listen-reset').addEventListener('click', () => {
 });
 document.getElementById('listen-sens').addEventListener('input', updateListenMark);
 updateListenMark();
+
+
+// ---- Pussing: teller per sesong ----
+const CLEAN_THRESHOLD = 250;
+
+async function fetchCleanings() {
+  const { data, error } = await supabase.from('cleaning_log').select('*').eq('user_id', currentUser.id)
+    .order('cleaned_on', { ascending: false }).order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+async function insertCleaning(c) {
+  const { error } = await supabase.from('cleaning_log').insert({ ...c, user_id: currentUser.id });
+  if (error) throw error;
+}
+
+async function deleteCleaningRow(id) {
+  const { error } = await supabase.from('cleaning_log').delete().eq('id', id).eq('user_id', currentUser.id);
+  if (error) throw error;
+}
+
+function currentCleaning() {
+  return cleanings.find(c => c.season === SEASONS[SEASONS.length - 1]) || null;
+}
+
+function sessionShotCount(s) {
+  return Number(s.totalShotsFired) || (s.shots ? s.shots.length : 0) || 0;
+}
+
+// antall skudd siden pussing i gjeldende sesong, eller null hvis ingen dato er satt
+function cleanCount() {
+  const c = currentCleaning();
+  if (!c) return null;
+  const season = SEASONS[SEASONS.length - 1];
+  const day = String(c.cleaned_on).slice(0, 10);
+  return sessions.reduce((sum, s) => {
+    if (s.season && s.season !== season) return sum;
+    const d = String(s.date).slice(0, 10);
+    if (d > day || (d === day && c.same_day_counts)) return sum + sessionShotCount(s);
+    return sum;
+  }, 0);
+}
+
+function cleanStep() {
+  const n = cleanCount();
+  return n === null ? 0 : Math.floor(n / CLEAN_THRESHOLD);
+}
+
+function fmtLongDate(iso) {
+  return new Date(iso).toLocaleDateString('nb-NO', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function updateCleanUI() {
+  const n = cleanCount();
+  const c = currentCleaning();
+  const btn = document.getElementById('clean-btn');
+  const over = n !== null && n >= CLEAN_THRESHOLD;
+  document.getElementById('clean-count').textContent = n === null ? '–' : String(n);
+  btn.classList.toggle('alert', over);
+  document.getElementById('clean-dot').hidden = !over;
+  const banner = document.getElementById('clean-banner');
+  banner.hidden = !over || !!viewAs;
+  if (over) {
+    document.getElementById('clean-banner-sub').textContent =
+      `${n} skudd siden ${fmtLongDate(c.cleaned_on)}, terskel ${CLEAN_THRESHOLD}`;
+  }
+}
+
+function openCleanSheet() {
+  const c = currentCleaning();
+  const n = cleanCount();
+  document.getElementById('clean-date').value = c ? String(c.cleaned_on).slice(0, 10) : new Date().toISOString().slice(0, 10);
+  document.getElementById('clean-same-day').value = c && !c.same_day_counts ? '0' : '1';
+  document.getElementById('clean-sheet-sub').textContent = c
+    ? `${n} skudd siden ${fmtLongDate(c.cleaned_on)} (${SEASONS[SEASONS.length - 1]})`
+    : `Legg inn datoen du sist pusset våpenet, så telles skuddene etter den (${SEASONS[SEASONS.length - 1]}).`;
+  document.getElementById('clean-sheet').hidden = false;
+}
+
+async function saveCleaning(dateIso, sameDay) {
+  try {
+    await insertCleaning({ season: SEASONS[SEASONS.length - 1], cleaned_on: dateIso, same_day_counts: sameDay });
+    cleanings = await fetchCleanings();
+    updateCleanUI();
+    if (!viewClean.hidden) renderCleanPage();
+  } catch (err) {
+    alert('Kunne ikke lagre pussingen. Har du kjørt schema_v8.sql i Supabase, og er du på nett?');
+  }
+}
+
+function showCleanAlert() {
+  const n = cleanCount();
+  const c = currentCleaning();
+  if (n === null || !c) return;
+  document.getElementById('clean-alert-title').textContent = `${Math.floor(n / CLEAN_THRESHOLD) * CLEAN_THRESHOLD} skudd siden pussing`;
+  document.getElementById('clean-alert-text').textContent =
+    `Du har skutt ${n} skudd siden ${fmtLongDate(c.cleaned_on)}. Våpenet bør pusses.`;
+  document.getElementById('clean-alert').hidden = false;
+}
+
+async function markCleanedNow() {
+  // «Pusset nå» etter skyting: dagens skudd ble skutt før pussing og telles ikke
+  await saveCleaning(new Date().toISOString().slice(0, 10), false);
+}
+
+document.getElementById('clean-btn').addEventListener('click', openCleanSheet);
+document.getElementById('clean-cancel').addEventListener('click', () => { document.getElementById('clean-sheet').hidden = true; });
+document.getElementById('clean-save').addEventListener('click', async () => {
+  const d = document.getElementById('clean-date').value;
+  if (!d) return;
+  await saveCleaning(d, document.getElementById('clean-same-day').value === '1');
+  document.getElementById('clean-sheet').hidden = true;
+});
+document.getElementById('clean-banner-done').addEventListener('click', markCleanedNow);
+document.getElementById('clean-alert-later').addEventListener('click', () => { document.getElementById('clean-alert').hidden = true; });
+document.getElementById('clean-alert-done').addEventListener('click', async () => {
+  document.getElementById('clean-alert').hidden = true;
+  await markCleanedNow();
+});
+
+
+// ---- Hjelpemidler: Puss av våpen ----
+function renderCleanPage() {
+  const n = cleanCount();
+  const c = currentCleaning();
+  const numEl = document.getElementById('clean-hero-num');
+  numEl.textContent = n === null ? '–' : String(n);
+  numEl.classList.toggle('over', n !== null && n >= CLEAN_THRESHOLD);
+  const into = n === null ? 0 : (n % CLEAN_THRESHOLD);
+  const pct = n === null ? 0 : (n >= CLEAN_THRESHOLD && into === 0 ? 100 : into / CLEAN_THRESHOLD * 100);
+  document.getElementById('clean-progress').style.width = Math.min(100, pct) + '%';
+  document.getElementById('clean-hero-sub').textContent = c
+    ? (n >= CLEAN_THRESHOLD
+        ? `Over terskelen på ${CLEAN_THRESHOLD}. Våpenet bør pusses. Sist pusset ${fmtLongDate(c.cleaned_on)}.`
+        : `${CLEAN_THRESHOLD - n} skudd igjen til ${CLEAN_THRESHOLD}. Sist pusset ${fmtLongDate(c.cleaned_on)}.`)
+    : 'Ingen pussing registrert i denne sesongen.';
+  const hist = document.getElementById('clean-history');
+  hist.innerHTML = cleanings.length ? cleanings.map(r => `
+    <li class="log-item"><div class="main"><div class="t">${fmtLongDate(r.cleaned_on)}</div>
+    <div class="s">${r.season} · skudd samme dag ${r.same_day_counts ? 'telles med' : 'telles ikke'}</div></div>
+    <button class="x" data-id="${r.id}" aria-label="Slett">✕</button></li>`).join('') : '<li class="people-empty">Ingen puss registrert.</li>';
+  hist.querySelectorAll('.x').forEach(b => b.addEventListener('click', async () => {
+    if (!confirm('Slette dette pusset?')) return;
+    try {
+      await deleteCleaningRow(b.dataset.id);
+      cleanings = await fetchCleanings();
+      updateCleanUI();
+      renderCleanPage();
+    } catch (e) { alert('Kunne ikke slette.'); }
+  }));
+}
+document.getElementById('tool-clean').addEventListener('click', () => { renderCleanPage(); showView(viewClean); });
+document.getElementById('back-clean').addEventListener('click', () => showView(viewTools));
+document.getElementById('clean-add').addEventListener('click', openCleanSheet);
+
+// ---- Hjelpemidler: Kontrollpunkter ----
+let controlPoints = [];
+async function loadControlPoints() {
+  const { data, error } = await supabase.from('control_points').select('*').eq('user_id', currentUser.id)
+    .order('sort_order', { ascending: true }).order('created_at', { ascending: true });
+  if (error) throw error;
+  controlPoints = data || [];
+}
+function positionsForKlasse() {
+  const g = KLASSE_GRUPPE[profile.klasse];
+  if (g === 'stå') return ['stå', 'kne', 'ligg'];
+  if (g === 'kne') return ['kne', 'ligg'];
+  if (g === 'ligg') return ['ligg'];
+  return null;
+}
+function escAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+function renderPoints() {
+  const pos = positionsForKlasse();
+  document.getElementById('points-note').textContent = pos ? `Klasse ${profile.klasse}` : 'Velg klasse på forsiden for å få riktige stillinger. Viser alle til da.';
+  const list = pos || ['stå', 'kne', 'ligg'];
+  const body = document.getElementById('points-body');
+  body.innerHTML = list.map(p => {
+    const items = controlPoints.filter(c => c.position === p);
+    return `<div class="point-section" data-pos="${p}">
+      <div class="point-title">${p}</div>
+      ${items.map(c => `<div class="point-item"><input type="text" value="${escAttr(c.text)}" data-id="${c.id}" aria-label="Kontrollpunkt"><button class="x" data-id="${c.id}" aria-label="Slett">✕</button></div>`).join('')}
+      <div class="point-add"><input type="text" class="field-input" placeholder="Nytt kontrollpunkt"><button class="add-shot-btn">Legg til</button></div>
+    </div>`;
+  }).join('');
+  body.querySelectorAll('.point-item input').forEach(inp => inp.addEventListener('change', async () => {
+    const text = inp.value.trim();
+    if (!text) { inp.value = (controlPoints.find(c => c.id === inp.dataset.id) || {}).text || ''; return; }
+    try {
+      const { error } = await supabase.from('control_points').update({ text }).eq('id', inp.dataset.id).eq('user_id', currentUser.id);
+      if (error) throw error;
+      const c = controlPoints.find(x => x.id === inp.dataset.id); if (c) c.text = text;
+    } catch (e) { alert('Kunne ikke lagre endringen.'); }
+  }));
+  body.querySelectorAll('.point-item .x').forEach(b => b.addEventListener('click', async () => {
+    try {
+      const { error } = await supabase.from('control_points').delete().eq('id', b.dataset.id).eq('user_id', currentUser.id);
+      if (error) throw error;
+      controlPoints = controlPoints.filter(c => c.id !== b.dataset.id);
+      renderPoints();
+    } catch (e) { alert('Kunne ikke slette.'); }
+  }));
+  body.querySelectorAll('.point-add').forEach(row => {
+    const add = async () => {
+      const inp = row.querySelector('input');
+      const text = inp.value.trim();
+      if (!text) return;
+      const position = row.closest('.point-section').dataset.pos;
+      const sort_order = controlPoints.filter(c => c.position === position).length;
+      try {
+        const { data, error } = await supabase.from('control_points').insert({ user_id: currentUser.id, position, text, sort_order }).select().single();
+        if (error) throw error;
+        controlPoints.push(data);
+        renderPoints();
+      } catch (e) { alert('Kunne ikke lagre. Har du kjørt schema_v8.sql i Supabase?'); }
+    };
+    row.querySelector('button').addEventListener('click', add);
+    row.querySelector('input').addEventListener('keydown', e => { if (e.key === 'Enter') add(); });
+  });
+}
+document.getElementById('tool-points').addEventListener('click', async () => {
+  try { await loadControlPoints(); } catch (e) { controlPoints = []; }
+  renderPoints();
+  showView(viewPoints);
+});
+document.getElementById('back-points').addEventListener('click', () => showView(viewTools));
+
+// ---- Hjelpemidler: Moment våpen ----
+let torqueRows = [];
+async function loadTorque() {
+  const { data, error } = await supabase.from('torque_log').select('*').eq('user_id', currentUser.id)
+    .order('tested_on', { ascending: false }).order('created_at', { ascending: false });
+  if (error) throw error;
+  torqueRows = data || [];
+}
+function fmtNm(v) { return v === null || v === undefined || v === '' ? '–' : Number(v).toFixed(1).replace('.', ','); }
+function renderTorque() {
+  const list = document.getElementById('torque-list');
+  list.innerHTML = torqueRows.length ? torqueRows.map(r => `
+    <li class="log-item"><div class="main"><div class="t">${fmtLongDate(r.tested_on)}</div><div class="s">${r.season}</div></div>
+    <div class="v">fremre ${fmtNm(r.front)} · bakre ${fmtNm(r.rear)} Nm</div>
+    <button class="x" data-id="${r.id}" aria-label="Slett">✕</button></li>`).join('') : '<li class="people-empty">Ingen målinger ennå.</li>';
+  list.querySelectorAll('.x').forEach(b => b.addEventListener('click', async () => {
+    if (!confirm('Slette denne målingen?')) return;
+    try {
+      const { error } = await supabase.from('torque_log').delete().eq('id', b.dataset.id).eq('user_id', currentUser.id);
+      if (error) throw error;
+      torqueRows = torqueRows.filter(r => r.id !== b.dataset.id);
+      renderTorque();
+    } catch (e) { alert('Kunne ikke slette.'); }
+  }));
+}
+document.getElementById('tool-torque').addEventListener('click', async () => {
+  populateSeasonSelect(document.getElementById('torque-season'));
+  document.getElementById('torque-season').value = SEASONS[SEASONS.length - 1];
+  document.getElementById('torque-date').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('torque-front').value = '';
+  document.getElementById('torque-rear').value = '';
+  try { await loadTorque(); } catch (e) { torqueRows = []; }
+  renderTorque();
+  showView(viewTorque);
+});
+document.getElementById('back-torque').addEventListener('click', () => showView(viewTools));
+document.getElementById('torque-save').addEventListener('click', async () => {
+  const fr = document.getElementById('torque-front').value;
+  const re = document.getElementById('torque-rear').value;
+  const tested_on = document.getElementById('torque-date').value;
+  if (!tested_on || (fr === '' && re === '')) { alert('Fyll inn dato og minst ett moment.'); return; }
+  const round1 = v => v === '' ? null : Math.round(parseFloat(String(v).replace(',', '.')) * 10) / 10;
+  try {
+    const { error } = await supabase.from('torque_log').insert({
+      user_id: currentUser.id, season: document.getElementById('torque-season').value,
+      front: round1(fr), rear: round1(re), tested_on
+    });
+    if (error) throw error;
+    await loadTorque();
+    document.getElementById('torque-front').value = '';
+    document.getElementById('torque-rear').value = '';
+    renderTorque();
+  } catch (e) { alert('Kunne ikke lagre. Har du kjørt schema_v8.sql i Supabase?'); }
+});
+
+// ---- Visualisering: «falsk» standplassleder ----
+let visRun = null;   // { abort, ctx, start }
+
+const VIS_KLAR = [{ s: 'Er det noen som ikke er klar?' }, { w: 5 }, { ki: true }];
+const visAfter = (sec) => [{ shoot: sec }, { w: 20 }, { s: 'Anvisning kommer.' }, { w: 4 }, { s: 'Er anvisningen i orden?' }, { w: 5 }];
+const visSerie = (text, sec, pre = 5) => [{ s: text }, { w: pre }, ...VIS_KLAR, ...visAfter(sec)];
+const visProve3 = () => [{ s: 'Gjør klar til fritt antall prøveskudd i 3 minutter.' }, { w: 5 }, { ki: true }, { shoot: 180 }, { s: 'Er anvisningen i orden?' }, { w: 5 }];
+const VIS_OMG_STOPS = [[75, '75 sekunder – stopp.'], [120, '2 minutter – stopp.']];
+const VIS_UTGANG = 'Utgangsstilling er ferdigstilling – våpenet skal være ladd og sikret, kolben skal være i bakken og det skal være fullt grep om kolbehalsen til kommando ild.';
+const VIS_TAKK = [{ s: 'Takk for oppmøtet. Vennligst trekk ut av standplass og gjør klar for neste lag.' }];
+const VIS_VISIT = 'Skyttere som ikke skal skyte omgang gjør våpen klar til visitasjon.';
+const VIS_JEGER = ' Jegerklassen skyter 3 skudd.';
+
+function visProve(withDetGaatt, flagg) {
+  return [
+    { s: 'Velkommen til standplassen.' }, { w: 3 },
+    { s: 'Skytterne får 2 minutter til lading og klargjøring fra nå.' }, { t0: true },
+    { s: flagg }, { until: 120 },
+    ...(withDetGaatt ? [{ s: 'Det har gått 2 minutter.' }] : []),
+    ...visProve3()
+  ];
+}
+
+function visOmgangEnd(sec, stops) {
+  return [{ shoot: sec, stops }, { s: 'Gjør våpen klar for visitasjon.' }, { w: 30 }, { s: 'Anvisning kommer.' }, { w: 4 }, { s: 'Er anvisningen i orden?' }, { w: 5 }];
+}
+
+function visScript(alt) {
+  const K1 = 'Skytterne kan nå ta ut kammerflagg og sette inn sluttstykket.';
+  const S = {};
+  if (alt === 'a1' || alt === 'a2') {
+    S.prove = visProve(true, K1);
+    S.s1 = visSerie(alt === 'a1'
+      ? 'Gjør klar til første serie. Det skal skytes 5 skudd liggende.' + VIS_JEGER + ' Skytetid er 2 minutter.'
+      : 'Gjør klar til første serie. Klasse eldre junior, 3, 4 og 5 skal skyte 5 skudd knestående. Øvrige klasser skal skyte 5 skudd liggende.' + VIS_JEGER + ' Skytetid er 2 minutter.', 120);
+    S.s2 = visSerie('Gjør klar til andre serie. Klasse eldre junior, 3, 4 og 5 skal skyte 5 skudd stående. Klasse 2, junior, skytterklasse 2 og V55 skal skyte 5 skudd knestående. Øvrige klasser skal skyte 5 skudd liggende.' + VIS_JEGER + ' Skytetid er 3 minutter.', 180, 15);
+    S.s3 = visSerie('Gjør klar til tredje serie. Klasse eldre junior, 3, 4 og 5 skal skyte 5 skudd knestående. Øvrige klasser skal skyte 5 skudd liggende.' + VIS_JEGER + ' Skytetid er 2 minutter.', 120);
+    if (alt === 'a1') {
+      S.t10 = [...visSerie('Gjør klar til ti-skudd serie. Klasse eldre junior, 3, 4 og 5 skal skyte 3 skudd stående, 3 skudd knestående og 4 skudd liggende. Klasse 2, junior, skytterklasse 2 og V55 skal skyte 6 skudd knestående og 4 skudd liggende. Øvrige klasser skal skyte 10 skudd liggende. Jegerklassen skyter 6 skudd. Skytetid er 3 minutter.', 180),
+        { s: 'Skyttere i klasse nybegynner ung og andre skyttere som ikke skal skyte omgang gjør våpen klar til visitasjon.' }, { w: 30 }];
+    } else {
+      S.t10 = [
+        { s: 'Gjør klar til ti-skudd. Serien er delt i to 5-skudds serier, og det blir egen kommando for hver av seriene. Klasse eldre junior, 3, 4 og 5 skal skyte 5 skudd stående. Klasse 2, junior, skytterklasse 2 og V55 skal skyte 5 skudd knestående. Øvrige klasser skal skyte 5 skudd liggende.' + VIS_JEGER + ' Skytetid er 3 minutter.' }, { w: 5 }, ...VIS_KLAR, { shoot: 180 },
+        { s: 'Gjør klar til ny 5-skudds serie. Klasse eldre junior, 3, 4 og 5 skal skyte 5 skudd knestående. Øvrige klasser skal skyte 5 skudd liggende.' + VIS_JEGER + ' Skytetid er 2 minutter.' }, { w: 5 }, ...VIS_KLAR, ...visAfter(120),
+        { s: VIS_VISIT }, { w: 30 }];
+    }
+    S.omg = [
+      { s: 'Gjør klar for omgang – også kikkertklassen og klasse 1 har mesterskap og kan skyte omgang. Det skal skytes 10 skudd liggende. Klasse 1 til 5, V55, kikkertklassen og eldre junior har skytetid 75 sekunder. V75 har skytetid 3 minutter. Øvrige klasser har skytetid 2 minutter. Det ropes stopp etter 75 sekunder og 2 minutter ved behov. ' + VIS_UTGANG },
+      { s: 'Skyttere, innta ferdigstilling!' }, { w: 5 }, ...VIS_KLAR, ...visOmgangEnd(180, VIS_OMG_STOPS), ...VIS_TAKK];
+  } else if (alt === 'm100') {
+    S.prove = visProve(false, K1);
+    S.s1 = visSerie('Gjør klar til første serie. Det skal skytes 5 skudd liggende.' + VIS_JEGER + ' Skytetid er 2 minutter.', 120);
+    S.s2 = visSerie('Gjør klar til andre serie. Klasse eldre junior skal skyte 5 skudd stående. Klasse junior og skytterklasse 2 skal skyte 5 skudd knestående. Øvrige klasser skal skyte 5 skudd liggende.' + VIS_JEGER + ' Skytetid er 3 minutter.', 180, 15);
+    S.s3 = visSerie('Gjør klar til tredje serie. Klasse eldre junior skal skyte 5 skudd knestående. Øvrige klasser skal skyte 5 skudd liggende.' + VIS_JEGER + ' Skytetid er 2 minutter.', 120);
+    S.t10 = [...visProve3(), ...visSerie('Gjør klar til ti-skudd serie. Klasse eldre junior skal skyte 3 skudd stående, 3 skudd knestående og 4 skudd liggende. Klasse junior og skytterklasse 2 skal skyte 6 skudd knestående og 4 skudd liggende. Øvrige klasser skal skyte 10 skudd liggende. Jegerklassen skyter 6 skudd. Skytetid er 3 minutter.', 180), { s: VIS_VISIT }, { w: 30 }];
+    S.omg = [...visProve3(),
+      { s: 'Gjør klar for omgang. Det skal skytes 10 skudd liggende. Skytetid er 75 sekunder for klasse eldre junior og 3 minutter for klasse V75. Øvrige klasser har skytetid 2 minutter. Det vil bli sagt stopp etter 75 sekunder og 2 minutter ved behov. ' + VIS_UTGANG },
+      { s: 'Lading, innta ferdigstilling!' }, { w: 5 }, ...VIS_KLAR, ...visOmgangEnd(180, VIS_OMG_STOPS), ...VIS_TAKK];
+  } else {
+    S.prove = visProve(false, 'Skytterne kan nå sette inn sluttstykket og ta ut kammerflagg.');
+    S.s1 = visSerie('Gjør klar til første serie. Det skal skytes 5 skudd liggende. Skytetid er 2 minutter.', 120);
+    S.s2 = visSerie('Gjør klar til andre serie. Klasse 3, 4 og 5 skal skyte 5 skudd stående. Klasse 2 og V55 skal skyte 5 skudd knestående. Øvrige klasser skal skyte 5 skudd liggende. Skytetid er 3 minutter.', 180, 15);
+    S.s3 = visSerie('Gjør klar til tredje serie. Klasse 3, 4 og 5 skal skyte 5 skudd knestående. Øvrige klasser skal skyte 5 skudd liggende. Skytetid er 2 minutter.', 120);
+    S.t10 = [...visProve3(), ...visSerie('Gjør klar til ti-skudd serie. Klasse 3, 4 og 5 skal skyte 3 skudd stående, 3 skudd knestående og 4 skudd liggende. Klasse 2 og V55 skal skyte 6 skudd knestående og 4 skudd liggende. Øvrige klasser skal skyte 10 skudd liggende. Skytetid er 3 minutter.', 180), { s: VIS_VISIT }, { w: 30 }];
+    S.omg = [...visProve3(),
+      { s: 'Gjør klar for omgang – også kikkertklassen og klasse 1 har mesterskap og kan skyte omgang. Det skal skytes 10 skudd liggende. Skytetid er 75 sekunder. ' + VIS_UTGANG },
+      { s: 'Skyttere, innta ferdigstilling!' }, { w: 5 }, ...VIS_KLAR,
+      { shoot: 75 }, { s: 'Gjør våpen klar for visitasjon.' }, { w: 30 }, { s: 'Anvisning kommer.' }, { w: 4 }, { s: 'Er anvisningen i orden?' }, { w: 5 }, ...VIS_TAKK];
+  }
+  return S;
+}
+
+function visSleepUntil(ms) {
+  return new Promise((res, rej) => {
+    const tick = () => {
+      if (!visRun || visRun.abort) return rej('abort');
+      const left = ms - performance.now();
+      if (left <= 0) return res();
+      setTimeout(tick, Math.min(left, 100));
+    };
+    tick();
+  });
+}
+const visSleep = (sec) => visSleepUntil(performance.now() + sec * 1000);
+
+function visBeep() {
+  const ctx = visRun && visRun.ctx;
+  if (!ctx) return;
+  try {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = 880; g.gain.value = 0.25;
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + 0.12);
+  } catch (e) {}
+}
+
+function visSpeakWait(text, firm) {
+  return new Promise((res) => {
+    if (!('speechSynthesis' in window)) { setTimeout(res, Math.min(8000, text.length * 70)); return; }
+    const u = makeUtterance(text, firm);
+    let done = false;
+    const fin = () => { if (!done) { done = true; clearTimeout(fb); res(); } };
+    const fb = setTimeout(fin, 3000 + text.length * 110);
+    u.onend = fin; u.onerror = fin;
+    speechSynthesis.speak(u);
+  });
+}
+
+async function visSay(text, firm) {
+  if (visRun.tone) { visBeep(); await visSleep(0.17); }
+  if (visRun.abort) throw 'abort';
+  await visSpeakWait(text, firm);
+}
+
+async function visSayAt(text, tMs, firm) {
+  await visSleepUntil(tMs - (visRun.tone ? 170 : 0));
+  if (visRun.tone) { visBeep(); await visSleep(0.17); }
+  if ('speechSynthesis' in window) speechSynthesis.speak(makeUtterance(text, firm));
+}
+
+async function visExec(steps) {
+  const R = visRun;
+  for (const st of steps) {
+    if (R.abort) throw 'abort';
+    if (st.s) await visSay(st.s);
+    else if (st.w) await visSleep(st.w);
+    else if (st.t0) R.t0 = performance.now();
+    else if (st.until) await visSleepUntil(R.t0 + st.until * 1000);
+    else if (st.ki) {
+      await visSay('Jeg sier klar om 10 sekunder fra nå.');
+      const t0 = performance.now();
+      await visSayAt('Klar.', t0 + 10000, true);
+      await visSayAt('Ild!', t0 + 15000, true);
+      R.tIld = t0 + 15000;
+    } else if (st.shoot) {
+      const tEnd = R.tIld + st.shoot * 1000;
+      for (const [at, text] of (st.stops || [])) await visSayAt(text, R.tIld + at * 1000 - 2000, true);
+      await visSayAt('Stans!', tEnd - 2000, true);
+      await visSleepUntil(tEnd);
+    }
+  }
+}
+
+async function startVisual() {
+  const alt = document.getElementById('vis-alt').value;
+  const part = document.getElementById('vis-part').value;
+  const tone = document.getElementById('vis-tone').checked;
+  let ctx = null;
+  try { const C = window.AudioContext || window.webkitAudioContext; if (C) { ctx = new C(); if (ctx.state === 'suspended') await ctx.resume(); } } catch (e) {}
+  if ('speechSynthesis' in window) { pickVoice(); speechSynthesis.cancel(); speak(' '); }
+  const S = visScript(alt);
+  const order = part === 'all' ? ['prove', 's1', 's2', 's3', 't10', 'omg'] : [part];
+  const steps = order.flatMap(k => S[k]);
+  visRun = { abort: false, ctx, tone, tIld: 0, t0: 0, started: Date.now() };
+  document.getElementById('vis-setup').hidden = true;
+  document.getElementById('vis-run').hidden = false;
+  document.getElementById('vis-status').textContent = '';
+  const btn = document.getElementById('vis-start');
+  btn.textContent = 'Avbryt'; btn.classList.add('stop');
+  requestWake();
+  const partLabel = document.getElementById('vis-part').selectedOptions[0].textContent;
+  const altLabel = document.getElementById('vis-alt').selectedOptions[0].textContent;
+  try {
+    await visExec(steps);
+    const minutes = Math.max(1, Math.round((Date.now() - visRun.started) / 60000));
+    endVisualUI();
+    try {
+      await insertMentalSession({
+        date: new Date().toISOString().slice(0, 10),
+        season: SEASONS[SEASONS.length - 1],
+        type: 'Visualisering',
+        duration_minutes: minutes,
+        comment: `${altLabel} · ${partLabel}`
+      });
+      mentalSessions = await fetchMentalSessions();
+      renderStats();
+      document.getElementById('vis-status').textContent = `Ferdig. Lagret som mental økt: Visualisering, ${minutes} min.`;
+    } catch (e) {
+      document.getElementById('vis-status').textContent = `Ferdig (${minutes} min), men økten ble ikke lagret. Sjekk nettforbindelsen.`;
+    }
+  } catch (e) {
+    if (e !== 'abort') console.error(e);
+    endVisualUI();
+  }
+}
+
+function endVisualUI() {
+  if (visRun) { try { if (visRun.ctx) visRun.ctx.close(); } catch (e) {} }
+  visRun = null;
+  if (!clockRun && !listenState) { try { if (clockWake) clockWake.release(); } catch (e) {} clockWake = null; }
+  const btn = document.getElementById('vis-start');
+  btn.textContent = 'Start'; btn.classList.remove('stop');
+  document.getElementById('vis-run').hidden = true;
+  document.getElementById('vis-setup').hidden = false;
+}
+
+function stopVis() {
+  if (!visRun) return;
+  visRun.abort = true;
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+}
+
+document.getElementById('tool-visual').addEventListener('click', () => {
+  document.getElementById('vis-status').textContent = '';
+  renderVoiceControls();
+  showView(viewVisual);
+});
+document.getElementById('back-visual').addEventListener('click', () => showView(viewTools));
+document.getElementById('vis-start').addEventListener('click', () => { visRun ? stopVis() : startVisual(); });
