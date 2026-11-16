@@ -71,6 +71,7 @@ function rowToSession(row) {
     notes: row.notes,
     shots: row.shots || [],
     images: row.images || [],
+    imagesLoaded: row.images !== undefined,
     totalShotsFired: row.total_shots_fired,
     klasse: row.klasse || null
   };
@@ -91,8 +92,19 @@ function sessionToRow(session) {
 }
 
 // ---- Remote CRUD (Supabase) ----
+async function ensureImages(session) {
+  if (session.imagesLoaded) return;
+  const { data, error } = await supabase.from('sessions').select('images').eq('id', session.id).single();
+  if (error) throw error;
+  session.images = (data && data.images) || [];
+  session.imagesLoaded = true;
+}
+
 async function fetchSessions(uid = currentUser.id, cache = true) {
-  const { data, error } = await supabase.from('sessions').select('*').eq('user_id', uid).order('date', { ascending: false });
+  // Bildene (store datafiler) hentes ikke i listen, bare når du åpner en økt
+  const { data, error } = await supabase.from('sessions')
+    .select('id,date,season,category,training_type,notes,shots,total_shots_fired,klasse')
+    .eq('user_id', uid).order('date', { ascending: false });
   if (error) throw error;
   const mapped = data.map(rowToSession);
   if (cache) await cacheSessionsLocally(mapped);
@@ -574,37 +586,27 @@ function renderDetailPlott(session) {
 }
 
 async function refreshList() {
-  try {
-    sessions = await fetchSessions();
-  } catch (err) {
-    console.error('Henting fra Supabase feilet, bruker lokal cache', err);
-    sessions = await getCachedSessions();
+  // Vis lokal kopi med en gang mens ferske data hentes
+  if (!sessions.length) {
+    try {
+      const cached = await getCachedSessions();
+      if (cached.length) { sessions = cached; renderStats(); renderTypeStats(); }
+    } catch (err) {}
   }
-  try {
-    physicalSessions = await fetchPhysicalSessions();
-  } catch (err) {
-    console.error('Kunne ikke hente fysisk trening', err);
+  const [s, p, d, m, c, g] = await Promise.allSettled([
+    fetchSessions(), fetchPhysicalSessions(), fetchDryfireSessions(),
+    fetchMentalSessions(), fetchCleanings(), fetchGoals()
+  ]);
+  if (s.status === 'fulfilled') sessions = s.value;
+  else {
+    console.error('Henting fra Supabase feilet, bruker lokal cache', s.reason);
+    try { sessions = await getCachedSessions(); } catch (err) {}
   }
-  try {
-    dryfireSessions = await fetchDryfireSessions();
-  } catch (err) {
-    console.error('Kunne ikke hente tørrtrening', err);
-  }
-  try {
-    mentalSessions = await fetchMentalSessions();
-  } catch (err) {
-    console.error('Kunne ikke hente mental trening', err);
-  }
-  try {
-    cleanings = await fetchCleanings();
-  } catch (err) {
-    console.error('Kunne ikke hente pussing', err);
-  }
-  try {
-    goalsData = await fetchGoals();
-  } catch (err) {
-    console.error('Kunne ikke hente målsetninger', err);
-  }
+  if (p.status === 'fulfilled') physicalSessions = p.value; else console.error('Kunne ikke hente fysisk trening', p.reason);
+  if (d.status === 'fulfilled') dryfireSessions = d.value; else console.error('Kunne ikke hente tørrtrening', d.reason);
+  if (m.status === 'fulfilled') mentalSessions = m.value; else console.error('Kunne ikke hente mental trening', m.reason);
+  if (c.status === 'fulfilled') cleanings = c.value; else console.error('Kunne ikke hente pussing', c.reason);
+  if (g.status === 'fulfilled') goalsData = g.value; else console.error('Kunne ikke hente målsetninger', g.reason);
   renderStats();
   renderTypeStats();
   updatePeopleBadge();
@@ -1213,19 +1215,24 @@ document.getElementById('save-session').addEventListener('click', async () => {
     try {
       await updateSessionRemote(id, session);
       editingId = null;
-      await refreshList();
+      const ix = sessions.findIndex(s => s.id === id);
+      if (ix >= 0) sessions[ix] = { ...session, id, imagesLoaded: true };
       openDetail(id);
+      refreshList();
     } catch (err) {
       alert('Kunne ikke lagre endringen. Sjekk nettforbindelsen og prøv igjen.');
     }
   } else {
     try {
       const before = cleanStep();
-      await insertSession(session);
+      const created = await insertSession(session);
       editingId = null;
-      await refreshList();
+      sessions = [created, ...sessions];
+      renderStats();
+      renderTypeStats();
       showView(viewList);
       if (cleanStep() > before) showCleanAlert();
+      refreshList();
     } catch (err) {
       alert('Kunne ikke lagre økten. Sjekk nettforbindelsen og prøv igjen.');
     }
@@ -1237,6 +1244,11 @@ async function openDetail(id) {
   currentDetailId = id;
   const session = sessions.find(s => s.id === id);
   if (!session) return;
+  if (!session.imagesLoaded) {
+    ensureImages(session).then(() => {
+      if (currentDetailId === id && !viewDetail.hidden && session.images.length) openDetail(id);
+    }).catch(() => {});
+  }
 
   document.getElementById('detail-title').textContent = sessionTitle(session);
 
@@ -1284,9 +1296,11 @@ function escapeHtml(str) {
 
 document.getElementById('back-detail').addEventListener('click', () => showView(viewList));
 
-document.getElementById('edit-session').addEventListener('click', () => {
+document.getElementById('edit-session').addEventListener('click', async () => {
   const session = sessions.find(s => s.id === currentDetailId);
-  if (session) openEditForm(session);
+  if (!session) return;
+  try { await ensureImages(session); } catch (e) { alert('Kunne ikke hente bildene til økten. Prøv igjen.'); return; }
+  openEditForm(session);
 });
 
 document.getElementById('delete-session').addEventListener('click', async () => {
