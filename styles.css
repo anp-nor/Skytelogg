@@ -1107,3 +1107,67 @@ a.tools-item { text-decoration: none; }
 .vis-run[hidden], #vis-setup[hidden] { display: none; }
 .vis-run-title { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
 .vis-run-sub { font-size: 14px; color: var(--text-dim); margin-top: 10px; }
+
+/* ---- Ola Five ---- */
+.ola-sum-row { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 0 0; font-size: 15px; font-weight: 600; }
+.ola-sum { font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--brass); }
+.ola-discard { display: block; margin: 8px auto 0; color: var(--text-dim); }
+.ola-pts { width: 64px; background: var(--bg-inner); border: 1px solid var(--hairline); border-radius: 10px; color: var(--text); font-family: var(--mono); font-size: 18px; font-weight: 700; text-align: center; padding: 8px 0; }
+.ola-pts:focus { outline: none; border-color: var(--brass); }
+.ola-pts-label { font-size: 12px; color: var(--text-dim); margin-left: 4px; }
+#ola-run[hidden], #ola-setup[hidden], #ola-result[hidden] { display: none; }
+#ola-run.shooting .clock-display { color: var(--brass); }
+.ola-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+.ola-metric { background: var(--bg-raised); border-radius: 12px; padding: 10px 8px; text-align: center; }
+.ola-metric .v { font-family: var(--mono); font-size: 18px; font-weight: 700; }
+.ola-metric .l { font-size: 11px; color: var(--text-dim); margin-top: 2px; letter-spacing: .04em; text-transform: uppercase; }
+.ola-metric.best .v { color: var(--brass); }
+.ola-chart { width: 100%; height: 170px; display: block; background: var(--bg-raised); border-radius: 12px; margin-bottom: 14px; }
+.ola-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ola-table th { text-align: left; font-weight: 400; color: var(--text-dim); padding: 6px 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.ola-table td { padding: 8px 4px; border-top: 1px solid var(--hairline); font-family: var(--mono); vertical-align: top; }
+.ola-table td.sp { color: var(--text-dim); font-size: 11px; }
+.ola-note { font-size: 12px; color: var(--text-dim); margin: 8px 0 0; line-height: 1.5; }
+
+/* ---- Øktarkiv ---- */
+.arch-group { font-size: 12px; font-weight: 700; color: var(--brass); letter-spacing: .08em; text-transform: uppercase; margin: 18px 0 8px; }
+.arch-item { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; background: var(--bg-raised); border: none; border-radius: 14px; padding: 14px 16px; color: var(--text); font-family: var(--sans); text-align: left; margin-bottom: 8px; }
+.arch-item .n { font-size: 17px; font-weight: 700; }
+.arch-item .s { font-size: 12px; color: var(--text-dim); margin-top: 3px; }
+.arch-meta { display: flex; align-items: center; gap: 10px; margin: 4px 0 12px; font-size: 13px; color: var(--text-dim); }
+.arch-tag { background: var(--brass); color: #0B0C0E; border-radius: 12px; padding: 3px 10px; font-size: 12px; font-weight: 700; }
+.arch-om { background: var(--bg-raised); border-radius: 12px; padding: 4px 14px; margin-bottom: 12px; }
+.arch-om summary { padding: 10px 0; font-size: 14px; font-weight: 700; cursor: pointer; }
+.arch-om p { font-size: 13px; line-height: 1.55; color: var(--text-dim); margin: 0 0 10px; }
+.arch-part { font-size: 12px; color: var(--text-dim); letter-spacing: .06em; text-transform: uppercase; margin: 16px 0 8px; }
+.arch-line { display: block; width: 100%; background: var(--bg-raised); border: none; border-radius: 10px; padding: 12px 14px; color: var(--text); font-family: var(--sans); font-size: 15px; text-align: left; margin-bottom: 6px; }
+.arch-line.done { color: #6A6D74; text-decoration: line-through; }
+.arch-block { background: var(--bg-raised); border-radius: 14px; padding: 12px 14px; margin-bottom: 8px; }
+.arch-block.done { opacity: .55; }
+.arch-block.done .arch-ex-name { text-decoration: line-through; }
+.arch-block-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.arch-badge { background: var(--bg-inner); border-radius: 8px; padding: 2px 9px; font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--brass); }
+.arch-ex { padding: 6px 0; border-top: 1px solid var(--hairline); }
+.arch-ex:first-of-type { border-top: none; }
+.arch-ex-row { display: flex; align-items: center; gap: 8px; }
+.arch-ex-name { flex: 1; font-size: 15px; font-weight: 600; }
+.arch-ex-sett { font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
+.arch-info-btn { background: var(--bg-inner); border: none; color: var(--text-dim); border-radius: 50%; width: 24px; height: 24px; font-family: var(--sans); font-size: 13px; font-weight: 700; padding: 0; }
+.arch-info-btn.on { color: var(--brass); }
+.arch-info { font-size: 13px; line-height: 1.5; color: var(--text-dim); margin: 6px 0 2px; }
+.arch-rounds { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; gap: 8px; }
+.arch-rounds-label { font-size: 12px; color: var(--text-dim); }
+.arch-rd { display: flex; gap: 8px; }
+.arch-rd button { width: 34px; height: 34px; border-radius: 50%; border: 1.5px solid #4A4D54; background: none; color: var(--text-dim); font-family: var(--mono); font-size: 13px; font-weight: 700; }
+.arch-rd button.on { background: var(--brass); border-color: var(--brass); color: #0B0C0E; }
+.arch-pause { position: fixed; inset: 0; z-index: 60; background: var(--bg); padding: 70px 22px 30px; overflow-y: auto; }
+.arch-pause[hidden] { display: none; }
+.arch-pause-title { text-align: center; font-size: 16px; font-weight: 700; color: var(--text-dim); }
+.arch-pause .clock-display { color: var(--brass); }
+.arch-pause-next { margin-top: 22px; background: var(--bg-raised); border-radius: 14px; padding: 12px 14px; font-size: 14px; line-height: 1.5; }
+.arch-pause-next .h { font-size: 12px; color: var(--text-dim); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 6px; }
+.arch-pause-next .ex { margin-top: 8px; }
+.arch-pause-next .ex b { font-weight: 700; }
+.arch-pause-next .ex span { display: block; color: var(--text-dim); font-size: 13px; }
+.arch-pause-btns { display: flex; gap: 10px; margin-top: 18px; }
+.arch-pause-cancel { display: block; margin: 18px auto 0; color: var(--text-dim); }

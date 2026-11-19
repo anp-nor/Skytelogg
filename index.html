@@ -203,6 +203,7 @@
       <option value="60 ligg ISSF">60 ligg ISSF</option>
       <option value="Omgang">Omgang</option>
       <option value="Grunnlag">Grunnlag</option>
+      <option value="Ola Five-skyting">Ola Five-skyting</option>
       <option value="Plott">Plott</option>
       <option value="Annet">Annet</option>
     </select>
@@ -223,6 +224,11 @@
     <input type="file" id="scan-file" accept="image/*,application/pdf" class="file-input-hidden">
     <button type="button" id="scan-btn" class="add-shot-btn">Skann skytelapp</button>
     <div id="scan-status" class="scan-status"></div>
+  </div>
+
+  <div class="form-block" id="time-block" hidden>
+    <label class="field-label" for="input-time">Tid fra Ild til femte skudd (sekunder)</label>
+    <input type="number" id="input-time" class="field-input" inputmode="decimal" step="0.1" min="0" max="60" placeholder="f.eks. 8.4">
   </div>
 
   <div class="form-block">
@@ -405,6 +411,7 @@
     <select id="physical-type" class="field-input">
       <option value="Styrke">Styrke</option>
       <option value="Kondisjon">Kondisjon</option>
+      <option value="Belastning">Belastning</option>
       <option value="Bevegelighet">Bevegelighet</option>
     </select>
   </div>
@@ -637,6 +644,8 @@
   </header>
   <div class="tools-list">
     <button class="tools-item" id="tool-clock"><span>Klokke</span><span class="tools-arrow">›</span></button>
+    <button class="tools-item" id="tool-ola" data-own><span>Ola Five</span><span class="tools-arrow">›</span></button>
+    <button class="tools-item" id="tool-archive" data-own><span>Øktarkiv</span><span class="tools-arrow">›</span></button>
     <button class="tools-item" id="tool-clean" data-own><span>Puss av våpen</span><span class="tools-arrow">›</span></button>
     <button class="tools-item" id="tool-points" data-own><span>Kontrollpunkter</span><span class="tools-arrow">›</span></button>
     <button class="tools-item" id="tool-torque" data-own><span>Moment våpen</span><span class="tools-arrow">›</span></button>
@@ -757,6 +766,105 @@
   <button id="vis-start" class="clock-btn">Start</button>
 </main>
 
+<!-- Ola Five-skyting -->
+<main id="view-ola" class="view" hidden>
+  <header class="subbar">
+    <button class="text-btn" id="back-ola">Tilbake</button>
+    <div class="subbar-title">Ola Five</div>
+    <span></span>
+  </header>
+
+  <div id="ola-setup">
+    <div class="listen-hint">5 skudd liggende, så raskt som mulig. Poeng teller først, så tid. Tiden går fra «Ild» til femte skudd, og maksimaltid er 1 minutt. Legg telefonen ved siden av deg med skjermen på.</div>
+    <div class="listen-row" style="margin-top:14px">
+      <span class="listen-label">Pip ved «Ild»</span>
+      <div class="chip-row" id="ola-beep-chips" style="flex:1">
+        <button class="chip on" data-beep="1">På</button>
+        <button class="chip" data-beep="0">Av</button>
+      </div>
+    </div>
+    <div class="voice-hint" id="ola-beep-hint">Tiden regnes fra pipet, som kommer helt nøyaktig. Uten pip regnes tiden fra stemmen begynner, og den kan avvike litt.</div>
+    <div class="listen-row" style="margin-top:14px">
+      <span class="listen-label">Følsomhet</span>
+      <input type="range" id="ola-sens" min="1" max="10" value="3">
+    </div>
+    <div class="listen-meter"><div class="listen-meter-fill" id="ola-level"></div><div class="listen-meter-mark" id="ola-mark"></div></div>
+    <div class="voice-controls">
+      <div class="field-label" style="margin-top:18px">Stemme</div>
+      <select class="voice-select field-input"></select>
+      <div class="voice-row">
+        <span class="listen-label">Tempo</span>
+        <input type="range" class="voice-rate" min="0.7" max="1.2" step="0.05" value="0.95">
+        <span class="voice-rate-val">0,95×</span>
+        <button class="text-btn text-btn-accent voice-test">Test</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="ola-run" hidden>
+    <div class="clock-phase-wrap"><span class="clock-phase" id="ola-phase">VENT</span></div>
+    <div class="clock-display" id="ola-time">0:00</div>
+    <div class="clock-caption" id="ola-caption"></div>
+    <div class="progress-track clock-progress"><div class="progress-fill" id="ola-progress" style="width:0%"></div></div>
+  </div>
+
+  <div id="ola-status" class="scan-status"></div>
+  <button id="ola-start" class="clock-btn">Start</button>
+
+  <div id="ola-result" hidden>
+    <div class="section-label">Skudd</div>
+    <div class="listen-card">
+      <ul id="ola-shots" class="listen-list"></ul>
+      <div id="ola-result-note" class="scan-status"></div>
+      <div class="ola-sum-row"><span>Sum</span><span id="ola-sum" class="ola-sum">0</span></div>
+      <div class="ola-sum-row"><span>Tid</span><span id="ola-total-time" class="ola-sum">–</span></div>
+    </div>
+    <button id="ola-save" class="clock-btn">Lagre økt</button>
+    <button id="ola-discard" class="text-btn ola-discard">Forkast</button>
+  </div>
+
+  <div class="section-label">Statistikk</div>
+  <div id="ola-stats"></div>
+</main>
+
+<!-- Øktarkiv -->
+<main id="view-archive" class="view" hidden>
+  <header class="subbar">
+    <button class="text-btn" id="back-archive">Tilbake</button>
+    <div class="subbar-title">Øktarkiv</div>
+    <span></span>
+  </header>
+  <div id="archive-list"></div>
+</main>
+
+<main id="view-archive-session" class="view" hidden>
+  <header class="subbar">
+    <button class="text-btn" id="back-arch-session">Tilbake</button>
+    <div class="subbar-title" id="arch-title">Økt</div>
+    <button class="text-btn text-btn-accent" id="arch-reset">Nullstill</button>
+  </header>
+  <div id="arch-body"></div>
+  <button id="arch-done" class="clock-btn">Ferdig</button>
+
+  <div id="arch-pause" class="arch-pause" hidden>
+    <div class="arch-pause-title" id="pause-title">Pause</div>
+    <div class="clock-display" id="pause-time">0:00</div>
+    <div class="arch-pause-next" id="pause-next"></div>
+    <div class="arch-pause-btns">
+      <button class="chip" id="pause-plus">+15 s</button>
+      <button class="chip" id="pause-skip">Hopp over</button>
+    </div>
+    <div class="listen-row" style="margin-top:18px">
+      <span class="listen-label">Stemme sier «Klar»</span>
+      <div class="chip-row" id="pause-voice-chips" style="flex:1">
+        <button class="chip on" data-v="1">På</button>
+        <button class="chip" data-v="0">Av</button>
+      </div>
+    </div>
+    <button class="text-btn arch-pause-cancel" id="pause-cancel">Avbryt pause</button>
+  </div>
+</main>
+
 <!-- Klokke -->
 <main id="view-clock" class="view" hidden>
   <header class="subbar">
@@ -810,7 +918,7 @@
   <div id="clock-status" class="scan-status"></div>
   <button id="clock-start" class="clock-btn">Start</button>
 
-  <div class="section-label">Skuddregistrering (test)</div>
+  <div class="section-label">Skuddregistrering</div>
   <div class="listen-card">
     <div class="listen-hint">Legg telefonen ved siden av deg med skjermen på. Smell registreres med tid. Hvis klokken går, regnes tiden fra «Ild».</div>
     <div class="listen-meter"><div class="listen-meter-fill" id="listen-level"></div><div class="listen-meter-mark" id="listen-mark"></div></div>

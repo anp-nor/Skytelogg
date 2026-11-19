@@ -1,5 +1,6 @@
 // ---- Supabase setup ----
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { OKTARKIV } from './oktarkiv.js';
 
 const SUPABASE_URL = 'https://mhwwtsvjnmvznphyartv.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_Em-ZMyseOn8LXXKRXf3FQg_JnFIsT-k';
@@ -73,12 +74,13 @@ function rowToSession(row) {
     images: row.images || [],
     imagesLoaded: row.images !== undefined,
     totalShotsFired: row.total_shots_fired,
-    klasse: row.klasse || null
+    klasse: row.klasse || null,
+    timeSeconds: row.time_seconds != null ? Number(row.time_seconds) : null
   };
 }
 
 function sessionToRow(session) {
-  return {
+  const row = {
     date: session.date,
     season: session.season,
     category: session.category,
@@ -89,6 +91,8 @@ function sessionToRow(session) {
     total_shots_fired: session.totalShotsFired,
     klasse: session.klasse || null
   };
+  if (session.trainingType === 'Ola Five-skyting') row.time_seconds = session.timeSeconds != null ? session.timeSeconds : null;
+  return row;
 }
 
 // ---- Remote CRUD (Supabase) ----
@@ -103,7 +107,7 @@ async function ensureImages(session) {
 async function fetchSessions(uid = currentUser.id, cache = true) {
   // Bildene (store datafiler) hentes ikke i listen, bare når du åpner en økt
   const { data, error } = await supabase.from('sessions')
-    .select('id,date,season,category,training_type,notes,shots,total_shots_fired,klasse')
+    .select('id,date,season,category,training_type,notes,shots,total_shots_fired,klasse,time_seconds')
     .eq('user_id', uid).order('date', { ascending: false });
   if (error) throw error;
   const mapped = data.map(rowToSession);
@@ -222,6 +226,7 @@ let draftImages = [];
 let currentDetailId = null;
 let editingId = null;
 let editingPhysicalId = null;
+let pendingArchiveId = null;
 let editingMentalId = null;
 let editingDryfireId = null;
 let viewAs = null; // {id, name, email, klasse} når treneren ser en utøvers logg
@@ -250,6 +255,7 @@ function programFlat(type, klasse) {
   else if (type === '25 kne') series = rep(rep(K, 5), 5);
   else if (type === '15 stå') series = rep(rep(S, 5), 3);
   else if (type === '60 ligg ISSF') series = rep(rep(L, 10), 6);
+  else if (type === 'Ola Five-skyting') series = [rep(L, 5)];
   else if (type === 'Omgang') series = [rep(L, 10)];
   else if (!g) series = null;
   else if (type === '35-skuddsprogram') {
@@ -269,6 +275,15 @@ function programFlat(type, klasse) {
   const flat = [];
   series.forEach((positions, i) => positions.forEach(p => flat.push({ position: p, serie: i + 1 })));
   return flat;
+}
+
+const OLA_TYPE = 'Ola Five-skyting';
+function isOlaComplete(s) {
+  return s.trainingType === OLA_TYPE && (s.shots || []).length >= 5 && s.timeSeconds != null;
+}
+function localDateStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
 function formatScore(score, decimal) {
@@ -386,14 +401,19 @@ const viewClean = document.getElementById('view-clean');
 const viewPoints = document.getElementById('view-points');
 const viewTorque = document.getElementById('view-torque');
 const viewVisual = document.getElementById('view-visual');
+const viewOla = document.getElementById('view-ola');
+const viewArchive = document.getElementById('view-archive');
+const viewArchiveSession = document.getElementById('view-archive-session');
 const bottomNav = document.getElementById('bottom-nav');
-const allViews = [viewList, viewAdd, viewDetail, viewStats, viewPhysicalAdd, viewMentalAdd, viewDryfireAdd, viewCalendar, viewGoals, viewHistory, viewPeople, viewClock, viewTools, viewClean, viewPoints, viewTorque, viewVisual];
+const allViews = [viewList, viewAdd, viewDetail, viewStats, viewPhysicalAdd, viewMentalAdd, viewDryfireAdd, viewCalendar, viewGoals, viewHistory, viewPeople, viewClock, viewTools, viewClean, viewPoints, viewTorque, viewVisual, viewOla, viewArchive, viewArchiveSession];
 
 function showView(view) {
   allViews.forEach(v => v.hidden = true);
   view.hidden = false;
   if (view !== viewClock) { try { stopClock(); stopListen(); } catch (e) {} }
   if (view !== viewVisual) { try { stopVis(); } catch (e) {} }
+  if (view !== viewOla) { try { cancelOla(); } catch (e) {} }
+  if (view !== viewArchiveSession) { try { stopPause(); } catch (e) {} }
   bottomNav.hidden = (view !== viewList);
   document.getElementById('fab-add').hidden = !!viewAs || view !== viewList;
 }
@@ -432,6 +452,7 @@ function renderStats() {
 function computeTypeStats(sessionsArr) {
   const map = {};
   sessionsArr.forEach(s => {
+    if (s.trainingType === OLA_TYPE && !isOlaComplete(s)) return;
     const key = s.trainingType || 'Uten øvelse';
     const total = scoreTotal(s);
     if (!map[key]) map[key] = { sum: 0, count: 0, best: -Infinity, totals: [], decimal: s.trainingType === '60 ligg ISSF' };
@@ -610,6 +631,7 @@ async function refreshList() {
   renderStats();
   renderTypeStats();
   updatePeopleBadge();
+  try { if (!viewOla.hidden) renderOlaStats(); if (!viewArchive.hidden) renderArchiveList(); } catch (e) {}
 }
 
 // ---- Profil (navn og klasse) ----
@@ -679,6 +701,7 @@ function resetAddForm() {
   document.getElementById('input-type').selectedIndex = 0;
   document.getElementById('input-stilling').selectedIndex = 0;
   document.getElementById('input-total-shots').value = '';
+  document.getElementById('input-time').value = '';
   document.getElementById('input-notes').value = '';
   document.getElementById('shot-score').value = '';
   setScanStatus('', '');
@@ -697,6 +720,7 @@ function openEditForm(session) {
   document.getElementById('input-category').value = session.category || 'Trening';
   if (session.trainingType) document.getElementById('input-type').value = session.trainingType;
   document.getElementById('input-total-shots').value = session.totalShotsFired || '';
+  document.getElementById('input-time').value = session.timeSeconds != null ? session.timeSeconds : '';
   document.getElementById('input-notes').value = session.notes || '';
   document.getElementById('shot-score').value = '';
   setScanStatus('', '');
@@ -727,6 +751,7 @@ function updateFormModeUI() {
   draftFlat = (isPlottMode || typeVal === 'Annet' || draftLegacy) ? null : programFlat(typeVal, draftKlasse);
   const manual = !isPlottMode && !draftFlat;
 
+  document.getElementById('time-block').hidden = typeVal !== OLA_TYPE;
   document.getElementById('shot-entry-normal').hidden = isPlottMode;
   document.getElementById('shot-entry-plott').hidden = !isPlottMode;
   document.getElementById('stilling-block').hidden = !(isPlottMode || manual);
@@ -1197,6 +1222,8 @@ document.getElementById('save-session').addEventListener('click', async () => {
   const totalShotsVal = document.getElementById('input-total-shots').value;
   const totalShotsFired = totalShotsVal ? Number(totalShotsVal) : null;
   const notes = document.getElementById('input-notes').value;
+  const timeVal = document.getElementById('input-time').value;
+  const timeSeconds = trainingType === OLA_TYPE && timeVal !== '' ? Math.round(Number(String(timeVal).replace(',', '.')) * 10) / 10 : null;
 
   const session = {
     date,
@@ -1206,6 +1233,7 @@ document.getElementById('save-session').addEventListener('click', async () => {
     totalShotsFired,
     notes,
     klasse: draftKlasse || null,
+    timeSeconds,
     shots: draftShots,
     images: draftImages
   };
@@ -1260,6 +1288,8 @@ async function openDetail(id) {
     ${session.klasse ? `<div class="detail-row"><span class="detail-row-label">Klasse</span><span class="detail-row-value">${session.klasse}</span></div>` : ''}
     ${session.trainingType ? `<div class="detail-row"><span class="detail-row-label">Øvelse</span><span class="detail-row-value">${session.trainingType}</span></div>` : ''}
     ${session.trainingType !== 'Plott' ? `<div class="detail-row"><span class="detail-row-label">Totalt poeng</span><span class="detail-row-value">${formatScore(scoreTotal(session), session.trainingType === '60 ligg ISSF')}</span></div>` : ''}
+    ${session.timeSeconds != null ? `<div class="detail-row"><span class="detail-row-label">Tid</span><span class="detail-row-value">${String(session.timeSeconds.toFixed(1)).replace('.', ',')} s</span></div>` : ''}
+    ${session.trainingType === OLA_TYPE && !isOlaComplete(session) ? `<div class="detail-row"><span class="detail-row-label">Status</span><span class="detail-row-value">Ufullført, telles ikke i statistikken</span></div>` : ''}
     ${session.totalShotsFired ? `<div class="detail-row"><span class="detail-row-label">Antall skudd totalt</span><span class="detail-row-value">${session.totalShotsFired}</span></div>` : ''}
     ${session.notes ? `<div class="detail-row"><span class="detail-row-label">Notater</span><span class="detail-row-value">${escapeHtml(session.notes)}</span></div>` : ''}
     <div class="detail-shots-title">Skudd (${session.shots.length})</div>
@@ -1353,6 +1383,7 @@ function getFilteredSessions() {
   return sessions.filter(s =>
     (!category || s.category === category) &&
     (!type || s.trainingType === type) &&
+    (s.trainingType !== OLA_TYPE || isOlaComplete(s)) &&
     inPeriod(s)
   );
 }
@@ -1498,6 +1529,7 @@ function drawLineChart(canvas, points) {
 function resetPhysicalForm() {
   document.getElementById('physical-comments').innerHTML = '';
   editingPhysicalId = null;
+  pendingArchiveId = null;
   document.getElementById('physical-title').textContent = 'Fysisk trening';
   document.getElementById('delete-physical').hidden = true;
   populateSeasonSelect(document.getElementById('physical-season'));
@@ -1523,6 +1555,7 @@ function openPhysicalDetail(entry) {
 }
 
 document.getElementById('cancel-physical').addEventListener('click', () => {
+  if (pendingArchiveId && editingPhysicalId == null) { showView(viewArchiveSession); return; }
   showView(editingPhysicalId != null ? viewHistory : viewList);
 });
 
@@ -1541,7 +1574,11 @@ document.getElementById('save-physical').addEventListener('click', async () => {
       renderHistoryList();
       showView(viewHistory);
     } else {
-      await insertPhysicalSession({ date, season, type, duration_minutes, comment });
+      const entry = { date, season, type, duration_minutes, comment };
+      const archId = pendingArchiveId;
+      if (archId) entry.archive_id = archId;
+      await insertPhysicalSession(entry);
+      if (archId) { clearArchProgress(archId); pendingArchiveId = null; }
       await refreshList();
       showView(viewList);
     }
@@ -3137,3 +3174,521 @@ document.getElementById('tool-visual').addEventListener('click', () => {
 });
 document.getElementById('back-visual').addEventListener('click', () => showView(viewTools));
 document.getElementById('vis-start').addEventListener('click', () => { visRun ? stopVis() : startVisual(); });
+
+
+// ---- Hjelpemidler: Ola Five-skyting ----
+const OLA_SHOTS = 5, OLA_MAX = 60, OLA_PRE = 10, OLA_KLAR_GAP = 5, OLA_ILD_LEAD = 0.15;
+let olaRun = null;      // pågående måling
+let olaShots = [];      // [{ t, p }] t = sekunder fra Ild, p = poeng (tekst)
+let olaBeep = true;
+try { olaBeep = localStorage.getItem('olaBeep') !== '0'; } catch (e) {}
+
+const commaNum = (n, d = 1) => Number(n).toFixed(d).replace('.', ',');
+
+function olaThreshold() {
+  const sv = Number(document.getElementById('ola-sens').value) || 3;
+  return 0.92 - (sv - 1) * 0.07;
+}
+function updateOlaMark() {
+  document.getElementById('ola-mark').style.left = Math.min(100, olaThreshold() * 100) + '%';
+}
+
+function setOlaUI(state) {
+  document.getElementById('ola-setup').hidden = state !== 'idle';
+  document.getElementById('ola-run').hidden = state !== 'running';
+  document.getElementById('ola-result').hidden = state !== 'result';
+  const btn = document.getElementById('ola-start');
+  btn.hidden = state === 'result';
+  btn.textContent = state === 'running' ? 'Avbryt' : 'Start';
+  btn.classList.toggle('stop', state === 'running');
+}
+
+function renderOlaSetup() {
+  document.querySelectorAll('#ola-beep-chips .chip').forEach(c => c.classList.toggle('on', (c.dataset.beep === '1') === olaBeep));
+  updateOlaMark();
+  renderVoiceControls();
+  document.getElementById('ola-status').textContent = '';
+}
+
+function olaBeepAt(ctx, when) {
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = 'sine';
+  o.frequency.value = 1000;
+  g.gain.setValueAtTime(0.0001, when);
+  g.gain.exponentialRampToValueAtTime(0.7, when + 0.005);
+  g.gain.setValueAtTime(0.7, when + 0.2);
+  g.gain.exponentialRampToValueAtTime(0.0001, when + 0.25);
+  o.connect(g);
+  g.connect(ctx.destination);
+  o.start(when);
+  o.stop(when + 0.3);
+}
+
+function releaseWakeIfIdle() {
+  if (!clockRun && !listenState && !olaRun && !pauseRun) { try { if (clockWake) clockWake.release(); } catch (e) {} clockWake = null; }
+}
+
+async function startOla() {
+  const status = document.getElementById('ola-status');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    status.textContent = 'Telefonen støtter ikke mikrofon i denne nettleseren.';
+    return;
+  }
+  if (listenState) stopListen();
+  if ('speechSynthesis' in window) { pickVoice(); speechSynthesis.cancel(); speak(' '); }
+  let stream, ctx;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    ctx = new Ctx();
+    if (ctx.state === 'suspended') await ctx.resume();
+  } catch (e) {
+    status.textContent = 'Fikk ikke tilgang til mikrofonen. Tillat den i innstillingene for nettleseren og prøv igjen.';
+    return;
+  }
+  const src = ctx.createMediaStreamSource(stream);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 2048;
+  analyser.smoothingTimeConstant = 0;
+  src.connect(analyser);
+
+  const P0 = performance.now();
+  const ildMs = (OLA_PRE + OLA_KLAR_GAP) * 1000;
+  let t0 = null;
+  if (olaBeep) {
+    const latency = (ctx.outputLatency || ctx.baseLatency || 0) * 1000;
+    olaBeepAt(ctx, ctx.currentTime + ildMs / 1000);
+    t0 = P0 + ildMs + latency;
+  }
+  olaShots = [];
+  const R = { ctx, stream, analyser, buf: new Float32Array(analyser.fftSize), P0, ildMs, t0, last: -1e9, noise: 0.002, stans: false, timers: [], tick: null };
+  olaRun = R;
+
+  speak('Klar kommer om 10 sekunder fra nå');
+  R.timers.push(setTimeout(() => speak('Klar', true), OLA_PRE * 1000));
+  R.timers.push(setTimeout(() => {
+    if (!('speechSynthesis' in window)) return;
+    const u = makeUtterance('Ild', true);
+    if (!olaBeep) u.onstart = () => { if (olaRun === R && R.t0 === null) R.t0 = performance.now(); };
+    speechSynthesis.speak(u);
+  }, ildMs - (olaBeep ? OLA_ILD_LEAD * 1000 : 0)));
+
+  setOlaUI('running');
+  status.textContent = '';
+  document.getElementById('ola-run').classList.remove('shooting');
+  document.getElementById('ola-phase').classList.remove('go');
+  requestWake();
+  R.tick = setInterval(olaTick, 20);
+  olaTick();
+}
+
+function olaTick() {
+  const R = olaRun;
+  if (!R) return;
+  const now = performance.now();
+  R.analyser.getFloatTimeDomainData(R.buf);
+  let peak = 0, sq = 0;
+  for (let i = 0; i < R.buf.length; i++) { const v = R.buf[i]; const a = Math.abs(v); if (a > peak) peak = a; sq += v * v; }
+  const rms = Math.sqrt(sq / R.buf.length);
+  const thr = olaThreshold();
+  const loud = peak >= thr && rms >= thr * 0.22 && rms >= R.noise * 6;
+  if (!loud) R.noise = R.noise * 0.98 + rms * 0.02;
+  if (R.t0 === null && now >= R.P0 + R.ildMs + 1500) R.t0 = R.P0 + R.ildMs;   // reserve hvis stemmen ikke meldte start
+
+  const phase = document.getElementById('ola-phase');
+  const run = document.getElementById('ola-run');
+  const timeEl = document.getElementById('ola-time');
+  const cap = document.getElementById('ola-caption');
+  const bar = document.getElementById('ola-progress');
+
+  if (R.t0 === null || now < R.t0) {
+    const remaining = Math.max(0, (R.P0 + R.ildMs - now) / 1000);
+    phase.textContent = now - R.P0 < OLA_PRE * 1000 ? 'KLAR OM 10' : 'KLAR';
+    timeEl.textContent = fmtClock(remaining);
+    cap.textContent = 'til Ild';
+    bar.style.width = '0%';
+    return;
+  }
+  const el = (now - R.t0) / 1000;
+  run.classList.add('shooting');
+  phase.classList.add('go');
+  phase.textContent = 'ILD';
+  timeEl.textContent = el.toFixed(1);
+  cap.textContent = `Skudd ${olaShots.length} av ${OLA_SHOTS}`;
+  bar.style.width = Math.min(100, el / OLA_MAX * 100) + '%';
+
+  // Piper og stemmen rett etter Ild skal ikke telle som skudd
+  if (loud && el >= 0.5 && now - R.last > 700) {
+    R.last = now;
+    olaShots.push({ t: Math.round(el * 10) / 10, p: '' });
+    try { if (navigator.vibrate) navigator.vibrate(30); } catch (e) {}
+    cap.textContent = `Skudd ${olaShots.length} av ${OLA_SHOTS}`;
+    if (olaShots.length >= OLA_SHOTS) { finishOla(); return; }
+  }
+  if (el >= OLA_MAX - 2 && !R.stans) { R.stans = true; speak('Stans', true); }
+  if (el >= OLA_MAX) finishOla();
+}
+
+function teardownOla() {
+  const R = olaRun;
+  if (!R) return;
+  clearInterval(R.tick);
+  R.timers.forEach(clearTimeout);
+  try { R.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+  try { R.ctx.close(); } catch (e) {}
+  olaRun = null;
+  releaseWakeIfIdle();
+}
+
+function cancelOla() {
+  if (!olaRun) return;
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  teardownOla();
+  olaShots = [];
+  setOlaUI('idle');
+}
+
+function finishOla() {
+  teardownOla();
+  setOlaUI('result');
+  renderOlaResult();
+}
+
+function renderOlaResult() {
+  const ul = document.getElementById('ola-shots');
+  ul.innerHTML = olaShots.map((s, i) => {
+    const prev = i > 0 ? olaShots[i - 1].t : null;
+    return `<li class="listen-item"><span class="n">${i + 1}</span><span class="t">${commaNum(s.t)} s</span><span class="d">${prev === null ? '' : '+' + commaNum(s.t - prev)}</span>` +
+      `<input class="ola-pts" type="number" inputmode="numeric" min="0" max="10" step="1" data-i="${i}" value="${escAttr(s.p)}" placeholder="p" aria-label="Poeng skudd ${i + 1}">` +
+      `<button class="x" data-i="${i}" aria-label="Fjern skudd">✕</button></li>`;
+  }).join('');
+  ul.querySelectorAll('.ola-pts').forEach(inp => inp.addEventListener('input', () => {
+    olaShots[Number(inp.dataset.i)].p = inp.value;
+    updateOlaSum();
+  }));
+  ul.querySelectorAll('.x').forEach(b => b.addEventListener('click', () => {
+    olaShots.splice(Number(b.dataset.i), 1);
+    renderOlaResult();
+  }));
+  updateOlaSum();
+}
+
+function updateOlaSum() {
+  const n = olaShots.length;
+  const complete = n >= OLA_SHOTS;
+  const sum = olaShots.reduce((t, s) => t + (parseInt(s.p, 10) || 0), 0);
+  document.getElementById('ola-sum').textContent = String(sum);
+  document.getElementById('ola-total-time').textContent = complete ? commaNum(olaShots[n - 1].t) + ' s' : '–';
+  const note = document.getElementById('ola-result-note');
+  note.textContent = n === 0
+    ? 'Ingen skudd registrert.'
+    : (complete ? '' : `Ufullført serie (${n} av ${OLA_SHOTS} skudd). Den lagres, men telles ikke med i statistikken.`);
+  document.getElementById('ola-save').hidden = n === 0;
+}
+
+async function saveOla() {
+  const note = document.getElementById('ola-result-note');
+  const bad = olaShots.findIndex(s => !/^\d+$/.test(String(s.p).trim()) || Number(s.p) > 10);
+  if (bad >= 0) { note.textContent = `Fyll inn poeng som heltall fra 0 til 10 for skudd ${bad + 1}.`; return; }
+  const shots = olaShots.map(s => ({ position: POS_L, score: Number(s.p), centerTen: false, serie: 1, t: s.t }));
+  const complete = shots.length >= OLA_SHOTS;
+  const session = {
+    date: localDateStr(),
+    season: SEASONS[SEASONS.length - 1],
+    category: 'Trening',
+    trainingType: OLA_TYPE,
+    totalShotsFired: shots.length,
+    notes: '',
+    klasse: profile.klasse || null,
+    timeSeconds: complete ? shots[shots.length - 1].t : null,
+    shots,
+    images: []
+  };
+  try {
+    const before = cleanStep();
+    const created = await insertSession(session);
+    sessions = [created, ...sessions];
+    olaShots = [];
+    renderStats();
+    renderTypeStats();
+    setOlaUI('idle');
+    document.getElementById('ola-status').textContent = complete ? 'Økten er lagret.' : 'Økten er lagret som ufullført.';
+    renderOlaStats();
+    if (cleanStep() > before) showCleanAlert();
+    refreshList();
+  } catch (err) {
+    note.textContent = 'Kunne ikke lagre. Har du kjørt schema_v9.sql i Supabase, og er du på nett?';
+  }
+}
+
+function olaMedian(a) { return a.length ? median(a) : 0; }
+
+function renderOlaStats() {
+  const box = document.getElementById('ola-stats');
+  const all = sessions.filter(s => s.trainingType === OLA_TYPE);
+  const done = all.filter(isOlaComplete).map(s => ({ s, p: scoreTotal(s), t: s.timeSeconds }));
+  const skipped = all.length - done.length;
+  if (!done.length) {
+    box.innerHTML = '<div class="ola-note">Ingen fullførte økter ennå.' + (skipped ? ` ${skipped} ufullførte er ikke med.` : '') + '</div>';
+    return;
+  }
+  const best = done.slice().sort((a, b) => b.p - a.p || a.t - b.t)[0];
+  const fastest = Math.min(...done.map(d => d.t));
+  const ps = done.map(d => d.p), ts = done.map(d => d.t);
+  const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
+  const m = (v, l, cls) => `<div class="ola-metric ${cls || ''}"><div class="v">${v}</div><div class="l">${l}</div></div>`;
+  const metrics = '<div class="ola-metrics">' +
+    m(best.p + ' p', 'Beste poeng', 'best') + m(commaNum(best.t) + ' s', 'Tid på beste') + m(commaNum(fastest) + ' s', 'Raskeste tid') +
+    m(commaNum(avg(ps)), 'Snitt poeng') + m(commaNum(olaMedian(ps)), 'Median poeng') + m(done.length, 'Økter') +
+    m(commaNum(avg(ts)) + ' s', 'Snitt tid') + m(commaNum(olaMedian(ts)) + ' s', 'Median tid') + m(skipped, 'Ufullførte') +
+    '</div>';
+
+  // Graf: tid per økt, poeng over punktet
+  const series = done.slice().sort((a, b) => new Date(a.s.date) - new Date(b.s.date)).slice(-20);
+  const W = 320, H = 170, L = 30, Rr = 12, T = 24, B = 24;
+  const tmin = Math.max(0, Math.floor(Math.min(...series.map(d => d.t)) - 1));
+  const tmax = Math.ceil(Math.max(...series.map(d => d.t)) + 1);
+  const x = i => series.length === 1 ? (L + (W - L - Rr) / 2) : L + i * (W - L - Rr) / (series.length - 1);
+  const y = v => T + (H - T - B) * (1 - (v - tmin) / (tmax - tmin || 1));
+  const line = series.map((d, i) => `${x(i).toFixed(1)},${y(d.t).toFixed(1)}`).join(' ');
+  const dots = series.map((d, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(d.t).toFixed(1)}" r="3.5" fill="#FF6B3D"/>` +
+    `<text x="${x(i).toFixed(1)}" y="${(y(d.t) - 8).toFixed(1)}" text-anchor="middle" font-size="11" fill="#F1EFEA" font-family="IBM Plex Mono, monospace">${d.p}</text>`).join('');
+  const chart = `<svg class="ola-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Tid per økt, med poeng over hvert punkt">` +
+    `<text x="${L - 4}" y="${y(tmax) + 4}" text-anchor="end" font-size="10" fill="#8A8780">${tmax}s</text>` +
+    `<text x="${L - 4}" y="${y(tmin) + 4}" text-anchor="end" font-size="10" fill="#8A8780">${tmin}s</text>` +
+    `<polyline points="${line}" fill="none" stroke="#8A3F27" stroke-width="1.5"/>${dots}` +
+    `<text x="${L}" y="${H - 6}" font-size="10" fill="#8A8780">${shortDateLabel(series[0].s.date)}</text>` +
+    `<text x="${W - Rr}" y="${H - 6}" text-anchor="end" font-size="10" fill="#8A8780">${shortDateLabel(series[series.length - 1].s.date)}</text></svg>`;
+
+  const rows = done.slice().sort((a, b) => new Date(b.s.date) - new Date(a.s.date)).slice(0, 10).map(d => {
+    const ts = (d.s.shots || []).map(x => x.t).filter(v => v != null);
+    const sp = ts.map((v, i) => i === 0 ? commaNum(v) : '+' + commaNum(v - ts[i - 1])).join(' ');
+    return `<tr><td>${formatDate(d.s.date)}</td><td>${d.p}</td><td>${commaNum(d.t)} s</td></tr>` + (sp ? `<tr><td class="sp" colspan="3">${sp}</td></tr>` : '');
+  }).join('');
+  const table = `<table class="ola-table"><thead><tr><th>Dato</th><th>Poeng</th><th>Tid</th></tr></thead><tbody>${rows}</tbody></table>`;
+  box.innerHTML = metrics + chart + table +
+    '<div class="ola-note">Beste er høyest poeng, og ved lik poengsum den raskeste tiden. Ufullførte serier er ikke med. Tallene under hver økt er tid til første skudd, og så tiden mellom skuddene.</div>';
+}
+
+document.getElementById('tool-ola').addEventListener('click', () => {
+  if (olaRun) cancelOla();
+  setOlaUI(olaShots.length ? 'result' : 'idle');
+  if (olaShots.length) renderOlaResult();
+  renderOlaSetup();
+  renderOlaStats();
+  showView(viewOla);
+});
+document.getElementById('back-ola').addEventListener('click', () => showView(viewTools));
+document.getElementById('ola-start').addEventListener('click', () => { olaRun ? cancelOla() : startOla(); });
+document.getElementById('ola-save').addEventListener('click', saveOla);
+document.getElementById('ola-discard').addEventListener('click', () => { olaShots = []; setOlaUI('idle'); });
+document.getElementById('ola-sens').addEventListener('input', updateOlaMark);
+document.querySelectorAll('#ola-beep-chips .chip').forEach(c => c.addEventListener('click', () => {
+  olaBeep = c.dataset.beep === '1';
+  try { localStorage.setItem('olaBeep', olaBeep ? '1' : '0'); } catch (e) {}
+  renderOlaSetup();
+}));
+updateOlaMark();
+
+
+// ---- Hjelpemidler: Øktarkiv ----
+const ARCH_TYPES = ['Styrke', 'Kondisjon', 'Belastning', 'Bevegelighet'];
+let archCurrent = null;
+let archProgress = null;   // { date, rounds: {nøkkel: antall}, done: {nøkkel: true} }
+let pauseRun = null;
+let pauseVoice = true;
+try { pauseVoice = localStorage.getItem('pauseVoice') !== '0'; } catch (e) {}
+
+const archKey = id => 'skytelogg_okt_' + id;
+function loadArchProgress(id) {
+  try {
+    const p = JSON.parse(localStorage.getItem(archKey(id)) || 'null');
+    if (p && p.date === localDateStr()) return { date: p.date, rounds: p.rounds || {}, done: p.done || {} };
+  } catch (e) {}
+  return { date: localDateStr(), rounds: {}, done: {} };
+}
+function saveArchProgress() {
+  if (!archCurrent || !archProgress) return;
+  try { localStorage.setItem(archKey(archCurrent.id), JSON.stringify(archProgress)); } catch (e) {}
+}
+function clearArchProgress(id) {
+  try { localStorage.removeItem(archKey(id)); } catch (e) {}
+}
+
+function archStats(id) {
+  const rows = physicalSessions.filter(p => p.archive_id === id);
+  if (!rows.length) return { n: 0, last: null };
+  const last = rows.map(r => r.date).sort().pop();
+  return { n: rows.length, last };
+}
+function archStatsText(id) {
+  const st = archStats(id);
+  return st.n ? `Sist ${formatDate(st.last)} · ${st.n} ${st.n === 1 ? 'gang' : 'ganger'}` : 'Ikke gjort ennå';
+}
+
+function renderArchiveList() {
+  const box = document.getElementById('archive-list');
+  box.innerHTML = ARCH_TYPES.map(type => {
+    const items = OKTARKIV.filter(o => o.type === type);
+    if (!items.length) return '';
+    return `<div class="arch-group">${type}</div>` + items.map(o =>
+      `<button class="arch-item" data-id="${escAttr(o.id)}"><div><div class="n">${escapeHtml(o.navn)}</div><div class="s">${escapeHtml(archStatsText(o.id))}</div></div><span class="tools-arrow">›</span></button>`
+    ).join('');
+  }).join('');
+  box.querySelectorAll('.arch-item').forEach(b => b.addEventListener('click', () => openArchiveSession(b.dataset.id)));
+}
+
+function archBlocks() {
+  const list = [];
+  archCurrent.deler.forEach((d, di) => (d.blokker || []).forEach(b => list.push({ key: di + ':' + b.id, b })));
+  return list;
+}
+
+function renderArchiveSession() {
+  const o = archCurrent;
+  document.getElementById('arch-title').textContent = o.navn;
+  let html = `<div class="arch-meta"><span class="arch-tag">${escapeHtml(o.type)}</span><span>${escapeHtml(archStatsText(o.id))}</span></div>`;
+  if (o.om && o.om.length) html += `<details class="arch-om"><summary>Om økten</summary>${o.om.map(t => `<p>${escapeHtml(t)}</p>`).join('')}</details>`;
+  o.deler.forEach((d, di) => {
+    html += `<div class="arch-part">${escapeHtml(d.tittel)}</div>`;
+    (d.linjer || []).forEach((l, li) => {
+      const key = `l${di}:${li}`;
+      html += `<button class="arch-line${archProgress.done[key] ? ' done' : ''}" data-k="${key}">${escapeHtml(typeof l === 'string' ? l : l.t)}</button>`;
+    });
+    (d.blokker || []).forEach(b => {
+      const key = di + ':' + b.id;
+      const n = archProgress.rounds[key] || 0;
+      const done = n >= b.runder;
+      html += `<div class="arch-block${done ? ' done' : ''}" data-b="${key}"><div class="arch-block-head">${b.id.length === 1 ? `<span class="arch-badge">${escapeHtml(b.id)}</span>` : ''}<span class="arch-ex-sett">${b.runder} ${b.runder === 1 ? 'runde' : 'runder'}${b.pause ? ' · pause ' + fmtPauseSec(b.pause) : ''}</span></div>`;
+      b.ovelser.forEach((ex, ei) => {
+        html += `<div class="arch-ex"><div class="arch-ex-row"><span class="arch-ex-name">${escapeHtml(ex.navn)}</span><span class="arch-ex-sett">${escapeHtml(ex.sett || '')}</span>` +
+          (ex.info ? `<button class="arch-info-btn" data-i="${key}|${ei}" aria-label="Beskrivelse">i</button>` : '') + '</div>' +
+          (ex.info ? `<div class="arch-info" data-info="${key}|${ei}" hidden>${escapeHtml(ex.info)}</div>` : '') + '</div>';
+      });
+      html += `<div class="arch-rounds"><span class="arch-rounds-label">Runde ferdig</span><div class="arch-rd">` +
+        Array.from({ length: b.runder }, (_, i) => `<button class="${i < n ? 'on' : ''}" data-r="${key}|${i + 1}" aria-label="Runde ${i + 1}">${i + 1}</button>`).join('') +
+        '</div></div></div>';
+    });
+  });
+  const body = document.getElementById('arch-body');
+  body.innerHTML = html;
+  body.querySelectorAll('.arch-line').forEach(b => b.addEventListener('click', () => {
+    archProgress.done[b.dataset.k] = !archProgress.done[b.dataset.k];
+    saveArchProgress();
+    b.classList.toggle('done', !!archProgress.done[b.dataset.k]);
+  }));
+  body.querySelectorAll('.arch-info-btn').forEach(b => b.addEventListener('click', () => {
+    const el = body.querySelector(`.arch-info[data-info="${b.dataset.i}"]`);
+    if (el) { el.hidden = !el.hidden; b.classList.toggle('on', !el.hidden); }
+  }));
+  body.querySelectorAll('.arch-rd button').forEach(b => b.addEventListener('click', () => {
+    const [key, num] = b.dataset.r.split('|');
+    onArchRound(key, Number(num));
+  }));
+}
+
+function fmtPauseSec(s) {
+  return s >= 60 && s % 60 === 0 ? (s / 60) + ' min' : s + ' s';
+}
+
+function onArchRound(key, num) {
+  const cur = archProgress.rounds[key] || 0;
+  const blocks = archBlocks();
+  const ix = blocks.findIndex(x => x.key === key);
+  if (ix < 0) return;
+  const b = blocks[ix].b;
+  if (num <= cur) {
+    archProgress.rounds[key] = num - 1;           // trykk på en tatt runde for å angre
+    saveArchProgress();
+    renderArchiveSession();
+    return;
+  }
+  archProgress.rounds[key] = num;
+  saveArchProgress();
+  renderArchiveSession();
+  if (num !== cur + 1 || !b.pause) return;
+  // neste mål: samme blokk hvis flere runder, ellers neste blokk som ikke er ferdig
+  let next = null;
+  if (num < b.runder) next = { b, round: num + 1, same: true };
+  else {
+    for (let i = ix + 1; i < blocks.length; i++) {
+      const done = archProgress.rounds[blocks[i].key] || 0;
+      if (done < blocks[i].b.runder) { next = { b: blocks[i].b, round: done + 1, same: false }; break; }
+    }
+  }
+  if (!next) return;
+  startPause(b, num, next);
+}
+
+function startPause(b, round, next) {
+  stopPause();
+  if (pauseVoice && 'speechSynthesis' in window) { pickVoice(); speechSynthesis.cancel(); speak(' '); }
+  const lbl = b.id.length === 1 ? `blokk ${b.id}, runde ${round}` : `runde ${round}`;
+  document.getElementById('pause-title').textContent = `Pause etter ${lbl}`;
+  const nb = next.b;
+  const nlbl = next.same
+    ? `runde ${next.round} av ${nb.runder}${nb.id.length === 1 ? ', blokk ' + nb.id : ''}`
+    : `${nb.id.length === 1 ? 'blokk ' + nb.id + ', ' : ''}runde ${next.round} av ${nb.runder}`;
+  document.getElementById('pause-next').innerHTML = `<div class="h">Neste: ${escapeHtml(nlbl)}</div>` +
+    nb.ovelser.map(ex => `<div class="ex"><b>${escapeHtml(ex.navn)}</b> <span>${escapeHtml(ex.sett || '')}${ex.info ? ' · ' + escapeHtml(ex.info) : ''}</span></div>`).join('');
+  document.querySelectorAll('#pause-voice-chips .chip').forEach(c => c.classList.toggle('on', (c.dataset.v === '1') === pauseVoice));
+  pauseRun = { end: Date.now() + b.pause * 1000, timer: null };
+  document.getElementById('arch-pause').hidden = false;
+  requestWake();
+  pauseTick();
+  pauseRun.timer = setInterval(pauseTick, 200);
+}
+
+function pauseTick() {
+  if (!pauseRun) return;
+  const rem = (pauseRun.end - Date.now()) / 1000;
+  if (rem <= 0) {
+    if (pauseVoice) speak('Klar', true);
+    try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e) {}
+    stopPause();
+    return;
+  }
+  document.getElementById('pause-time').textContent = fmtClock(Math.ceil(rem));
+}
+
+function stopPause() {
+  if (pauseRun) { clearInterval(pauseRun.timer); pauseRun = null; releaseWakeIfIdle(); }
+  const el = document.getElementById('arch-pause');
+  if (el) el.hidden = true;
+}
+
+function openArchiveSession(id) {
+  archCurrent = OKTARKIV.find(o => o.id === id);
+  if (!archCurrent) return;
+  archProgress = loadArchProgress(id);
+  renderArchiveSession();
+  showView(viewArchiveSession);
+  window.scrollTo(0, 0);
+}
+
+document.getElementById('tool-archive').addEventListener('click', () => { renderArchiveList(); showView(viewArchive); });
+document.getElementById('back-archive').addEventListener('click', () => showView(viewTools));
+document.getElementById('back-arch-session').addEventListener('click', () => { renderArchiveList(); showView(viewArchive); });
+document.getElementById('arch-reset').addEventListener('click', () => {
+  if (!archCurrent) return;
+  archProgress = { date: localDateStr(), rounds: {}, done: {} };
+  clearArchProgress(archCurrent.id);
+  renderArchiveSession();
+});
+document.getElementById('arch-done').addEventListener('click', () => {
+  if (!archCurrent) return;
+  resetPhysicalForm();
+  pendingArchiveId = archCurrent.id;
+  document.getElementById('physical-type').value = archCurrent.type;
+  document.getElementById('physical-comment').value = archCurrent.navn;
+  showView(viewPhysicalAdd);
+});
+document.getElementById('pause-plus').addEventListener('click', () => { if (pauseRun) { pauseRun.end += 15000; pauseTick(); } });
+document.getElementById('pause-skip').addEventListener('click', stopPause);
+document.getElementById('pause-cancel').addEventListener('click', stopPause);
+document.querySelectorAll('#pause-voice-chips .chip').forEach(c => c.addEventListener('click', () => {
+  pauseVoice = c.dataset.v === '1';
+  try { localStorage.setItem('pauseVoice', pauseVoice ? '1' : '0'); } catch (e) {}
+  document.querySelectorAll('#pause-voice-chips .chip').forEach(x => x.classList.toggle('on', (x.dataset.v === '1') === pauseVoice));
+}));

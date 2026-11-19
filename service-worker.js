@@ -1,9 +1,10 @@
-const CACHE_NAME = 'riflelog-v43';
+const CACHE_NAME = 'riflelog-v45';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
   './app.js',
+  './oktarkiv.js',
   './manifest.json',
   './icon-180-v2.png',
   './icon-512-v2.png'
